@@ -17,7 +17,9 @@ type PermittedCall = {
   toolId: string
 }
 
-type MemoryCache = Map<string, { query: string; memories: string[] }>
+type MemoryCache = Map<string, { messageId: string; memories: string[] }>
+
+type UserMessage = { id?: string; text: string }
 
 function partText(part: { type?: unknown; text?: unknown }): string {
   if (part.type !== 'text') {
@@ -32,11 +34,7 @@ function partText(part: { type?: unknown; text?: unknown }): string {
 }
 
 function textPart(value: unknown): string {
-  if (value === null) {
-    return ''
-  }
-
-  if (typeof value !== 'object') {
+  if (value === null || typeof value !== 'object') {
     return ''
   }
 
@@ -68,15 +66,17 @@ function userMessageText(message: unknown): string {
   return contentText(value.content).trim()
 }
 
-function latestUserMessage(messages: readonly unknown[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const text = userMessageText(messages[index])
-    if (text !== '') {
-      return text
-    }
+function latestUserMessage(messages: readonly unknown[]): UserMessage | undefined {
+  const message = messages.findLast((candidate) => userMessageText(candidate) !== '')
+  if (message === undefined) {
+    return undefined
   }
 
-  return ''
+  const value = message as { id?: unknown }
+  return {
+    ...(typeof value.id === 'string' && { id: value.id }),
+    text: userMessageText(message)
+  }
 }
 
 function selectorParts(selector: string): { base: string; variant?: string } {
@@ -197,23 +197,24 @@ async function retrieveMemories(
   mem0: Mem0Tools,
   cache: MemoryCache,
   session: { id: string; agent: string },
-  query: string
+  query: UserMessage
 ): Promise<string[]> {
+  const cacheKey = query.id ?? query.text
   const cached = cache.get(session.id)
-  if (cached?.query === query) {
+  if (cached?.messageId === cacheKey) {
     return cached.memories
   }
 
-  const memories = await mem0.search(session, query, RETRIEVAL_LIMIT)
+  const memories = await mem0.search(session, query.text, RETRIEVAL_LIMIT)
   const texts = memories.map((memory) => memory.memory)
-  cache.set(session.id, { query, memories: texts })
+  cache.set(session.id, { messageId: cacheKey, memories: texts })
   return texts
 }
 
 async function registerContext(ctx: Plugin.Context, mem0: Mem0Tools, cache: MemoryCache) {
   return ctx.session.hook('context', async (event) => {
     const query = latestUserMessage(event.messages)
-    if (query === '') {
+    if (query === undefined) {
       return
     }
 

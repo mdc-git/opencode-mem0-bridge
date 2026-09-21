@@ -1,91 +1,157 @@
 # OpenCode Mem0 Bridge
 
-An OpenCode V2 server plugin that adds project-memory retrieval and optional
-automatic memory extraction to the local [Mem0 MCP server](https://github.com/mdc-git/mem0).
-The plugin retrieves the three most relevant memories for each latest user message
-and appends them as untrusted reference context.
-It also registers the `project-memory` skill programmatically.
+An OpenCode V2 server plugin that connects OpenCode to a project-scoped local
+[Mem0 MCP server](https://github.com/mdc-git/mem0). It retrieves relevant project
+memories for new prompts and can optionally extract durable memories after an
+OpenCode execution.
+
+> **Data handling:** Retrieved memories are added as untrusted reference context.
+> When automatic extraction is enabled, execution evidence is sent to the
+> configured OpenCode extraction model. Enable it only when that provider and
+> data flow are appropriate for your project.
+
+## What it provides
+
+- Retrieves up to three relevant memories for each latest user message; repeated context-hook calls for that same message use the session cache.
+- Adds retrieved memories to the model context as `<project_memory>` reference material.
+- Registers the `project-memory` skill with OpenCode.
+- Optionally reconciles durable memories after successful, failed, or user-interrupted executions.
 
 ## Requirements
 
-- OpenCode V2
-- The local Mem0 MCP server from `github.com/mdc-git/mem0`
-- Local Ollama and Qdrant services started by that MCP server
+- OpenCode V2.
+- The local Mem0 MCP server and its [setup requirements](https://github.com/mdc-git/mem0#requirements).
+- A configured OpenCode model provider when automatic extraction is enabled.
 
-The MCP server remains responsible for memory tools and persistence. This
-repository provides the OpenCode bridge and skill only.
+The Mem0 server owns embeddings, vector search, persistence, and project scoping.
+The bridge supplies the OpenCode integration.
 
-## Global GitHub installation
+## Install and enable
 
-Add the Git package and MCP server to `$HOME/.config/opencode/opencode.jsonc`:
+### 1. Install the local Mem0 MCP server
 
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git"],
-  "mcp": {
-    "servers": {
-      "mem0": {
-        "type": "local",
-        "command": ["<MEM0_ROOT>/run.sh"],
-        "environment": {
-          "MEM0_PROFILE": "{env:MEM0_PROFILE}",
-          "MEM0_EMBEDDING_MODEL": "{env:MEM0_EMBEDDING_MODEL}"
-        }
-      }
-    }
-  }
-}
-```
-
-Replace `<MEM0_ROOT>` with the absolute path to the local Mem0 MCP server.
-The `{env:NAME}` values tell OpenCode to copy environment variables from the
-process that starts OpenCode. Set both variables before starting OpenCode,
-using the same values used during Mem0 setup:
+Follow the [Mem0 MCP server installation instructions](https://github.com/mdc-git/mem0#install-from-github). The short form is:
 
 ```bash
-export MEM0_PROFILE=cpu
-export MEM0_EMBEDDING_MODEL=qwen3-embedding:0.6b
-opencode
+curl -fsSL https://raw.githubusercontent.com/mdc-git/mem0/master/install.sh | bash
 ```
 
-Leave `MEM0_PROFILE` unset or set it to `cpu` for CPU-only execution. Set it to
-`gpu` for GPU execution. If you do not want to export variables, replace the
-`{env:...}` values with literal values such as `"cpu"` or `"gpu"` and
-`"qwen3-embedding:0.6b"`. Any other profile value is invalid.
+The installer uses CPU execution by default. Set `MEM0_PROFILE=gpu` when running
+the installer or setup if GPU execution is appropriate. The default embedding
+model is `qwen3-embedding:0.6b`.
 
-The plugin registers the `project-memory` skill through OpenCode's skill
-registry; no separate `skills` configuration entry is required.
+### 2. Configure OpenCode
 
-## Automatic extraction
-
-Automatic extraction is disabled by default. Enable it with plugin options:
+Add the plugin and local MCP server to
+`$HOME/.config/opencode/opencode.jsonc`. Replace `<MEM0_ROOT>` with the absolute
+path to the Mem0 checkout:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
+      "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git"
+    }
+  ],
+  "mcp": {
+    "servers": {
+      "mem0": {
+        "type": "local",
+        "command": ["<MEM0_ROOT>/run.sh"]
+      }
+    }
+  }
+}
+```
+
+For GPU execution, add this to the `mem0` server entry:
+
+```jsonc
+"environment": {
+  "MEM0_PROFILE": "gpu"
+}
+```
+
+Use `MEM0_EMBEDDING_MODEL` only when overriding the default. Custom embedding
+models must produce 1024-dimensional vectors for the current local server setup.
+
+### 3. Verify the connection
+
+From the project you want to use with memory, check the MCP connection:
+
+```bash
+opencode mcp list
+```
+
+The `mem0` entry should report `connected`. Each OpenCode working directory has
+its own Mem0 memory scope.
+
+## Quick start
+
+In OpenCode, ask it to store a fact that should remain useful across sessions:
+
+```text
+Store this durable project constraint in project memory: this repository uses Bun for development checks.
+```
+
+Start a new turn and ask:
+
+```text
+What does project memory say about this repository's development tooling?
+```
+
+The bridge searches Mem0 and supplies matching results to the model as reference
+context. Verify retrieved memories against the repository before relying on them.
+
+## Automatic extraction
+
+Automatic extraction is disabled by default. Enable it with the plugin object
+form and choose a model available through your OpenCode provider:
+
+```jsonc
+{
+  "plugins": [
+    {
       "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git",
       "options": {
         "automaticExtraction": true,
-        "extractionModel": "ollama/qwen3:8b"
+        "extractionModel": "provider/model#variant"
       }
     }
   ]
 }
 ```
 
-`extractionModel` uses the `provider/model#variant` format. When it is omitted,
-the triggering session model is used. The model receives the ordered user and
-visible agent messages, tool parameters, and failed tool errors from the terminal
-execution. Each evidence item is limited to 450 characters. Existing relevant
-memories are supplied separately so the model can return `add` or `update`
-operations. Mem0 stores those operations without its own LLM inference.
+`extractionModel` uses the `provider/model#variant` format. Omit it to use the
+model that triggered the execution. The extractor receives ordered user and
+visible agent evidence, tool parameters, and failed tool errors available in the
+current execution context. A long execution that has been compacted can omit
+earlier evidence that is no longer present in that context. It stores only
+verified, durable project knowledge and may return no changes for a turn that
+contains nothing worth retaining. Extraction runs asynchronously after the
+execution event, and writes occur only for valid `add` or `update` operations.
 
 ## Development
 
-```sh
+Contributors need Node.js 24 or newer and Bun:
+
+```bash
 bun install
-bun build plugins/mem0-bridge/index.ts --target bun --outfile /tmp/opencode-mem0-bridge.js
+bun run check
 ```
+
+`bun run check` runs formatting, linting, type checking, the checkout-local
+activation test, dependency analysis, the audit, and package validation.
+
+Use the repository checkout configuration in `.opencode/opencode.jsonc` when
+testing the local plugin source. The production entry point is
+`plugins/mem0-bridge/index.ts`; `.opencode/index.ts` provides the local checkout
+identity.
+
+## Related documentation
+
+- [Local Mem0 MCP server](https://github.com/mdc-git/mem0)
+- [OpenCode V2 configuration](https://opencode.ai/v2/docs/config)
+- [OpenCode V2 plugins](https://opencode.ai/v2/docs/build/plugins)
+- [OpenCode V2 MCP servers](https://opencode.ai/v2/docs/mcp-servers)
