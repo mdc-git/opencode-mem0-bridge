@@ -6,6 +6,7 @@
       "name": "opencode-mem0-bridge",
       "dependencies": {
         "@opencode/plugin": "latest",
+        "@opencode/schema": "latest",
       },
     },
   },

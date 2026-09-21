@@ -1,9 +1,9 @@
 # OpenCode Mem0 Bridge
 
-An OpenCode V2 server plugin that adds automatic project-memory retrieval to the
-local [Mem0 MCP server](https://github.com/mdc-git/mem0). The plugin retrieves the
-three most relevant memories for each latest user message and appends them as
-untrusted reference context.
+An OpenCode V2 server plugin that adds project-memory retrieval and optional
+automatic memory extraction to the local [Mem0 MCP server](https://github.com/mdc-git/mem0).
+The plugin retrieves the three most relevant memories for each latest user message
+and appends them as untrusted reference context.
 It also registers the `project-memory` skill programmatically.
 
 ## Requirements
@@ -58,6 +58,32 @@ Leave `MEM0_PROFILE` unset or set it to `cpu` for CPU-only execution. Set it to
 
 The plugin registers the `project-memory` skill through OpenCode's skill
 registry; no separate `skills` configuration entry is required.
+
+## Automatic extraction
+
+Automatic extraction is disabled by default. Enable it with plugin options:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git",
+      "options": {
+        "automaticExtraction": true,
+        "extractionModel": "ollama/qwen3:8b"
+      }
+    }
+  ]
+}
+```
+
+`extractionModel` uses the `provider/model#variant` format. When it is omitted,
+the triggering session model is used. The model receives the ordered user and
+visible agent messages, tool parameters, and failed tool errors from the terminal
+execution. Each evidence item is limited to 450 characters. Existing relevant
+memories are supplied separately so the model can return `add` or `update`
+operations. Mem0 stores those operations without its own LLM inference.
 
 ## Development
 

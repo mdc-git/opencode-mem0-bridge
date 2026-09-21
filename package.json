@@ -13,7 +13,8 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@opencode/plugin": "latest"
+    "@opencode/plugin": "latest",
+    "@opencode/schema": "latest"
   },
   "$comment": "The plugin is also available as a local checkout through .opencode/index.ts."
 }
