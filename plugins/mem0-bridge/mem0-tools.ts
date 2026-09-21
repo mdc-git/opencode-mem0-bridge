@@ -7,6 +7,8 @@ import { Session as SessionSchema } from '@opencode/schema/session'
 const sessionIdKey = 'sessionID' as const
 const messageIdKey = 'messageID' as const
 const memoryIdKey = 'memory_id' as const
+const TOOL_WAIT_MS = 5000
+const TOOL_RETRY_MS = 100
 
 type Session = {
   id: string
@@ -17,6 +19,8 @@ type ToolCall = {
   sessionId: string
   toolId: string
 }
+
+type RegisteredTool = Awaited<ReturnType<Plugin.Context['tool']['list']>>[number]
 
 export type MemorySearchResult = {
   id: string
@@ -35,6 +39,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toolId(server: string, name: string): string {
   return `${server}_${name}`.replaceAll(/[^\w\-]/gv, '_')
+}
+
+async function pause(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve()
+    }, milliseconds)
+  })
 }
 
 function parseTextResult(text: string): unknown {
@@ -174,14 +186,19 @@ export class Mem0Tools {
     return agent
   }
 
-  private async tool(id: string) {
+  private async tool(id: string, deadline = Date.now() + TOOL_WAIT_MS): Promise<RegisteredTool> {
     const tools = await this.ctx.tool.list()
     const tool = tools.find((candidate) => candidate.id === id)
-    if (tool === undefined) {
+    if (tool !== undefined) {
+      return tool
+    }
+
+    if (Date.now() >= deadline) {
       throw new Error(`MCP tool ${id} is unavailable`)
     }
 
-    return tool
+    await pause(TOOL_RETRY_MS)
+    return this.tool(id, deadline)
   }
 
   async search(session: Session, query: string, limit = 10): Promise<MemorySearchResult[]> {
