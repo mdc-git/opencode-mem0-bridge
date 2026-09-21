@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencode-mem0-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "repository": "github:mdc-git/opencode-mem0-bridge",
+  "type": "module",
+  "exports": {
+    ".": "./plugins/mem0-bridge/index.ts"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@opencode/plugin": "latest"
+  },
+  "$comment": "The plugin is also available as a local checkout through .opencode/index.ts."
+}

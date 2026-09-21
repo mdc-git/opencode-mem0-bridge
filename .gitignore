@@ -1,0 +1,7 @@
+node_modules/
+.learning/
+package-lock.json
+!.opencode/
+.opencode/*
+!.opencode/index.ts
+!.opencode/opencode.jsonc
