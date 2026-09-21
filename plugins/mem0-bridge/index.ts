@@ -85,13 +85,42 @@ export default Plugin.define({
       })
     })
     const cache = new Map<string, { query: string; memories: string[] }>()
+    const checkedSessions = new Set<string>()
+    const disabledSessions = new Set<string>()
+
+    const mem0Available = async () => {
+      try {
+        const { data } = await ctx.mcp.list()
+        return data.some((server) => server.name === 'mem0' && server.status.status === 'connected')
+      } catch {
+        return false
+      }
+    }
 
     const registration = await ctx.session.hook('context', async (event) => {
+      if (disabledSessions.has(event.sessionID)) return
+
+      if (!checkedSessions.has(event.sessionID)) {
+        checkedSessions.add(event.sessionID)
+        if (!(await mem0Available())) {
+          disabledSessions.add(event.sessionID)
+          return
+        }
+      }
+
       const query = latestUserMessage(event.messages)
       if (!query) return
 
-      const cached = cache.get(event.sessionID)
-      const memories = cached?.query === query ? cached.memories : await retrieveMemories(query)
+      let memories: string[]
+      try {
+        const cached = cache.get(event.sessionID)
+        memories = cached?.query === query ? cached.memories : await retrieveMemories(query)
+      } catch {
+        disabledSessions.add(event.sessionID)
+        cache.delete(event.sessionID)
+        return
+      }
+
       cache.set(event.sessionID, { query, memories })
       if (!memories.length) return
 
@@ -110,6 +139,8 @@ export default Plugin.define({
 
     return async () => {
       cache.clear()
+      checkedSessions.clear()
+      disabledSessions.clear()
       await registration.dispose()
       await skill.dispose()
     }
