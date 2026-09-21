@@ -7,7 +7,6 @@ const OLLAMA_URL = 'http://127.0.0.1:11435'
 const QDRANT_URL = 'http://127.0.0.1:11436'
 const EMBEDDING_MODEL = process.env.MEM0_EMBEDDING_MODEL ?? 'qwen3-embedding:0.6b'
 const COLLECTION = 'memories'
-const PROJECT_SCOPE = 'mem0'
 const LIMIT = 3
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 const SKILL_PATH = resolve(PLUGIN_DIR, 'project-memory.md')
@@ -37,7 +36,7 @@ function latestUserMessage(messages: readonly unknown[]): string {
   return ''
 }
 
-async function retrieveMemories(query: string): Promise<string[]> {
+async function retrieveMemories(query: string, scope: string): Promise<string[]> {
   const embeddingResponse = await fetch(`${OLLAMA_URL}/api/embed`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -57,7 +56,7 @@ async function retrieveMemories(query: string): Promise<string[]> {
       limit: LIMIT,
       with_payload: true,
       filter: {
-        must: [{ key: 'user_id', match: { value: PROJECT_SCOPE } }]
+        must: [{ key: 'user_id', match: { value: scope } }]
       }
     })
   })
@@ -74,6 +73,7 @@ async function retrieveMemories(query: string): Promise<string[]> {
 export default Plugin.define({
   id: 'mdc-git.mem0-bridge',
   async setup(ctx) {
+    const scope = resolve(ctx.location.directory)
     const skillContent = await readFile(SKILL_PATH, 'utf8')
     const skill = await ctx.skill.transform((editor) => {
       editor.add({
@@ -114,7 +114,7 @@ export default Plugin.define({
       let memories: string[]
       try {
         const cached = cache.get(event.sessionID)
-        memories = cached?.query === query ? cached.memories : await retrieveMemories(query)
+        memories = cached?.query === query ? cached.memories : await retrieveMemories(query, scope)
       } catch {
         disabledSessions.add(event.sessionID)
         cache.delete(event.sessionID)

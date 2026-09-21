@@ -30,7 +30,6 @@ Add the Git package and MCP server to `$HOME/.config/opencode/opencode.jsonc`:
       "mem0": {
         "type": "local",
         "command": ["<MEM0_ROOT>/run.sh"],
-        "cwd": "<MEM0_ROOT>",
         "environment": {
           "MEM0_PROFILE": "{env:MEM0_PROFILE}",
           "MEM0_EMBEDDING_MODEL": "{env:MEM0_EMBEDDING_MODEL}"
