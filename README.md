@@ -30,7 +30,11 @@ Add the Git package and MCP server to `$HOME/.config/opencode/opencode.jsonc`:
       "mem0": {
         "type": "local",
         "command": ["<MEM0_ROOT>/run.sh"],
-        "cwd": "<MEM0_ROOT>"
+        "cwd": "<MEM0_ROOT>",
+        "environment": {
+          "MEM0_PROFILE": "{env:MEM0_PROFILE}",
+          "MEM0_EMBEDDING_MODEL": "{env:MEM0_EMBEDDING_MODEL}"
+        }
       }
     }
   }
@@ -38,7 +42,20 @@ Add the Git package and MCP server to `$HOME/.config/opencode/opencode.jsonc`:
 ```
 
 Replace `<MEM0_ROOT>` with the absolute path to the local Mem0 MCP server.
-Shell variables are not expanded inside the `command` or `cwd` values.
+The `{env:NAME}` values tell OpenCode to copy environment variables from the
+process that starts OpenCode. Set both variables before starting OpenCode,
+using the same values used during Mem0 setup:
+
+```bash
+export MEM0_PROFILE=cpu
+export MEM0_EMBEDDING_MODEL=qwen3-embedding:0.6b
+opencode
+```
+
+Leave `MEM0_PROFILE` unset or set it to `cpu` for CPU-only execution. Set it to
+`gpu` for GPU execution. If you do not want to export variables, replace the
+`{env:...}` values with literal values such as `"cpu"` or `"gpu"` and
+`"qwen3-embedding:0.6b"`. Any other profile value is invalid.
 
 The plugin registers the `project-memory` skill through OpenCode's skill
 registry; no separate `skills` configuration entry is required.
