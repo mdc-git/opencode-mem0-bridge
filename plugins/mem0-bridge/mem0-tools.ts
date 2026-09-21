@@ -4,14 +4,18 @@ import { Agent } from '@opencode/schema/agent'
 import { SessionMessage } from '@opencode/schema'
 import { Session as SessionSchema } from '@opencode/schema/session'
 
+const sessionIdKey = 'sessionID' as const
+const messageIdKey = 'messageID' as const
+const memoryIdKey = 'memory_id' as const
+
 type Session = {
   id: string
   agent?: string
 }
 
 type ToolCall = {
-  sessionID: string
-  toolID: string
+  sessionId: string
+  toolId: string
 }
 
 export type MemorySearchResult = {
@@ -22,22 +26,18 @@ export type MemorySearchResult = {
 
 type ToolResult = {
   output?: unknown
-  content?: readonly { type?: string; text?: string }[]
+  content?: ReadonlyArray<{ type?: string; text?: string }>
 }
 
-function toolID(server: string, name: string): string {
-  return `${server}_${name}`.replace(/[^a-zA-Z0-9_-]/g, '_')
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
 }
 
-function resultValue(result: unknown): unknown {
-  if (!result || typeof result !== 'object') return result
+function toolId(server: string, name: string): string {
+  return `${server}_${name}`.replaceAll(/[^\w\-]/gv, '_')
+}
 
-  const value = result as ToolResult
-  if (value.output !== undefined) return value.output
-
-  const text = value.content?.find((part) => part.type === 'text')?.text
-  if (!text) return undefined
-
+function parseTextResult(text: string): unknown {
   try {
     return JSON.parse(text)
   } catch {
@@ -45,21 +45,77 @@ function resultValue(result: unknown): unknown {
   }
 }
 
-function searchResults(value: unknown): MemorySearchResult[] {
-  if (!value || typeof value !== 'object') throw new Error('Mem0 search returned an invalid result')
+function contentValue(content: ToolResult['content']): unknown {
+  const text = content?.find((part) => part.type === 'text')?.text
+  if (text === undefined) {
+    return undefined
+  }
 
-  const results = (value as { results?: unknown }).results
-  if (!Array.isArray(results)) throw new Error('Mem0 search returned no results list')
+  return parseTextResult(text)
+}
+
+function resultValue(result: unknown): unknown {
+  if (result === null || typeof result !== 'object') {
+    return result
+  }
+
+  const value = result as ToolResult
+  return value.output === undefined ? contentValue(value.content) : value.output
+}
+
+function searchFields(value: unknown):
+  | {
+      id: string
+      memory: string
+      score?: unknown
+    }
+  | undefined {
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  const { id, memory, score } = value as {
+    id?: unknown
+    memory?: unknown
+    score?: unknown
+  }
+  if (typeof id !== 'string') {
+    return undefined
+  }
+
+  if (typeof memory !== 'string') {
+    return undefined
+  }
+
+  return { id, memory, score }
+}
+
+function parseSearchResult(value: unknown): MemorySearchResult | undefined {
+  const fields = searchFields(value)
+  if (fields === undefined) {
+    return undefined
+  }
+
+  return {
+    id: fields.id,
+    memory: fields.memory,
+    ...(typeof fields.score === 'number' && { score: fields.score })
+  }
+}
+
+function searchResults(value: unknown): MemorySearchResult[] {
+  if (value === null || typeof value !== 'object') {
+    throw new Error('Mem0 search returned an invalid result')
+  }
+
+  const { results } = value as { results?: unknown }
+  if (!Array.isArray(results)) {
+    throw new TypeError('Mem0 search returned no results list')
+  }
 
   return results.flatMap((item) => {
-    if (!item || typeof item !== 'object') return []
-    const result = item as { id?: unknown; memory?: unknown; score?: unknown }
-    if (typeof result.id !== 'string' || typeof result.memory !== 'string') return []
-    return [{
-      id: result.id,
-      memory: result.memory,
-      ...(typeof result.score === 'number' ? { score: result.score } : {})
-    }]
+    const result = parseSearchResult(item)
+    return result === undefined ? [] : [result]
   })
 }
 
@@ -70,8 +126,69 @@ export class Mem0Tools {
     private readonly signal: AbortSignal
   ) {}
 
+  private async execute(
+    session: Session,
+    name: string,
+    input: Record<string, unknown>
+  ): Promise<unknown> {
+    const agent = await this.agent(session)
+
+    const id = CallID.make(crypto.randomUUID())
+    const idText = id
+    const effectiveToolId = toolId('mem0', name)
+    const tool = await this.tool(effectiveToolId)
+
+    this.permittedCalls.set(idText, {
+      sessionId: session.id,
+      toolId: effectiveToolId
+    })
+    try {
+      return await tool.execute(input, {
+        [sessionIdKey]: SessionSchema.ID.make(session.id),
+        agent: Agent.ID.make(agent),
+        [messageIdKey]: SessionMessage.ID.create(),
+        id,
+        signal: this.signal,
+        async progress() {
+          await Promise.resolve()
+        }
+      })
+    } finally {
+      this.permittedCalls.delete(idText)
+    }
+  }
+
+  private async agent(session: Session): Promise<string> {
+    if (session.agent !== undefined) {
+      return session.agent
+    }
+
+    const agents = await this.ctx.agent.list(undefined, {
+      signal: this.signal
+    })
+    const agent = agents.data[0]?.id
+    if (agent === undefined) {
+      throw new Error(`Session ${session.id} has no selected agent`)
+    }
+
+    return agent
+  }
+
+  private async tool(id: string) {
+    const tools = await this.ctx.tool.list()
+    const tool = tools.find((candidate) => candidate.id === id)
+    if (tool === undefined) {
+      throw new Error(`MCP tool ${id} is unavailable`)
+    }
+
+    return tool
+  }
+
   async search(session: Session, query: string, limit = 10): Promise<MemorySearchResult[]> {
-    const result = await this.execute(session, 'search_memories', { query, limit })
+    const result = await this.execute(session, 'search_memories', {
+      query,
+      limit
+    })
     return searchResults(resultValue(result))
   }
 
@@ -79,32 +196,10 @@ export class Mem0Tools {
     await this.execute(session, 'add_memory', { text })
   }
 
-  async update(session: Session, memoryID: string, text: string): Promise<void> {
-    await this.execute(session, 'update_memory', { memory_id: memoryID, text })
-  }
-
-  private async execute(session: Session, name: string, input: Record<string, unknown>): Promise<unknown> {
-    const agent = session.agent ?? (await this.ctx.agent.list(undefined, { signal: this.signal })).data[0]?.id
-    if (!agent) throw new Error(`Session ${session.id} has no selected agent`)
-
-    const id = CallID.make(crypto.randomUUID())
-    const idText = String(id)
-    const effectiveToolID = toolID('mem0', name)
-    const tool = (await this.ctx.tool.list()).find((candidate) => candidate.id === effectiveToolID)
-    if (!tool) throw new Error(`MCP tool ${effectiveToolID} is unavailable`)
-
-    this.permittedCalls.set(idText, { sessionID: session.id, toolID: effectiveToolID })
-    try {
-      return await tool.execute(input, {
-        sessionID: SessionSchema.ID.make(session.id),
-        agent: Agent.ID.make(agent),
-        messageID: SessionMessage.ID.create(),
-        id,
-        signal: this.signal,
-        async progress() {}
-      })
-    } finally {
-      this.permittedCalls.delete(idText)
-    }
+  async update(session: Session, memoryId: string, text: string): Promise<void> {
+    await this.execute(session, 'update_memory', {
+      [memoryIdKey]: memoryId,
+      text
+    })
   }
 }

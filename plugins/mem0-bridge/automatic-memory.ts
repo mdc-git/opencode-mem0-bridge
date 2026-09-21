@@ -12,10 +12,6 @@ type Evidence = {
   text: string
 }
 
-export type MemoryOperation =
-  | { action: 'add'; text: string }
-  | { action: 'update'; memoryID: string; text: string }
-
 function contentText(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
@@ -28,78 +24,170 @@ function serializedInput(value: unknown): string {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+}
+
 function truncateForSync(text: string): string {
-  if (text.length <= MAX_ITEM_CHARS) return text
+  if (text.length <= MAX_ITEM_CHARS) {
+    return text
+  }
 
   const window = text.slice(0, MAX_ITEM_CHARS)
   const cut = Math.max(...SENTENCE_ENDS.map((separator) => window.lastIndexOf(separator)))
-  if (cut > MAX_ITEM_CHARS / 3) return text.slice(0, cut + 1)
+  if (cut > MAX_ITEM_CHARS / 3) {
+    return text.slice(0, cut + 1)
+  }
+
   return window
 }
 
 function evidence(kind: EvidenceKind, text: string): Evidence[] {
   const trimmed = text.trim()
-  return trimmed ? [{ kind, text: truncateForSync(trimmed) }] : []
+  if (trimmed === '') {
+    return []
+  }
+
+  return [{ kind, text: truncateForSync(trimmed) }]
+}
+
+function toolError(value: unknown): string {
+  if (!isRecord(value)) {
+    return 'unknown tool error'
+  }
+
+  return typeof value.message === 'string' ? value.message : 'unknown tool error'
+}
+
+function toolName(value: unknown): string {
+  return typeof value === 'string' ? value : 'unknown'
+}
+
+function toolInput(state: Record<string, unknown>): string {
+  return serializedInput(state.input ?? {})
 }
 
 function toolEvidence(part: { name?: unknown; state?: unknown }): Evidence[] {
-  const name = typeof part.name === 'string' ? part.name : 'unknown'
-  if (!part.state || typeof part.state !== 'object') return []
-  const state = part.state as {
-    status?: unknown
-    input?: unknown
-    error?: { message?: unknown }
+  if (!isRecord(part.state)) {
+    return []
   }
 
-  const input = serializedInput(state.input ?? {})
+  const name = toolName(part.name)
+  const { state } = part
+
+  const input = toolInput(state)
   if (state.status === 'error') {
-    const error = typeof state.error?.message === 'string' ? state.error.message : 'unknown tool error'
-    return evidence('tool', `TOOL_ERROR ${name}(${input}) -> ${error}`)
+    return evidence('tool', `TOOL_ERROR ${name}(${input}) -> ${toolError(state.error)}`)
   }
 
   return evidence('tool', `TOOL_CALL ${name}(${input})`)
 }
 
-function executionMessages(messages: readonly unknown[], outcome: TerminalOutcome, idleID?: string): readonly unknown[] {
-  const currentIdleIndex = messages.findLastIndex((message) => {
-    if (!message || typeof message !== 'object') return false
-    const item = message as { id?: unknown; type?: unknown; outcome?: unknown }
-    return item.type === 'idle' && item.outcome === outcome && (idleID === undefined || item.id === idleID)
-  })
-  if (currentIdleIndex < 0) return idleID === undefined ? messages : []
+function isIdleMessage(message: unknown): message is Record<string, unknown> {
+  return isRecord(message) && message.type === 'idle'
+}
 
-  const previousIdleIndex = messages.findLastIndex((message, index) => {
-    if (index >= currentIdleIndex || !message || typeof message !== 'object') return false
-    return (message as { type?: unknown }).type === 'idle'
-  })
+function isMatchingIdle(
+  message: unknown,
+  outcome: TerminalOutcome,
+  idleID: string | undefined
+): boolean {
+  if (!isIdleMessage(message)) {
+    return false
+  }
+
+  if (message.outcome !== outcome) {
+    return false
+  }
+
+  if (idleID === undefined) {
+    return true
+  }
+
+  return message.id === idleID
+}
+
+function isEarlierIdle(message: unknown, index: number, currentIndex: number): boolean {
+  return index < currentIndex && isIdleMessage(message)
+}
+
+function executionMessages(
+  messages: readonly unknown[],
+  outcome: TerminalOutcome,
+  idleID?: string
+): readonly unknown[] {
+  const currentIdleIndex = messages.findLastIndex((message) =>
+    isMatchingIdle(message, outcome, idleID)
+  )
+  if (currentIdleIndex === -1) {
+    return idleID === undefined ? messages : []
+  }
+
+  const previousIdleIndex = messages.findLastIndex((message, index) =>
+    isEarlierIdle(message, index, currentIdleIndex)
+  )
   return messages.slice(previousIdleIndex + 1, currentIdleIndex)
 }
 
-export function buildEvidence(messages: readonly unknown[], outcome: TerminalOutcome, idleID?: string): Evidence[] {
-  return executionMessages(messages, outcome, idleID).flatMap((message) => {
-    if (!message || typeof message !== 'object') return []
-    const item = message as {
-      type?: unknown
-      text?: unknown
-      content?: unknown
-    }
+function evidenceForPart(part: unknown): Evidence[] {
+  if (!isRecord(part)) {
+    return []
+  }
 
-    if (item.type === 'user') return evidence('user', contentText(item.text))
-    if (item.type !== 'assistant' || !Array.isArray(item.content)) return []
+  if (part.type === 'text') {
+    return evidence('agent', contentText(part.text))
+  }
 
-    return item.content.flatMap((part) => {
-      if (!part || typeof part !== 'object') return []
-      const content = part as { type?: unknown; text?: unknown; name?: unknown; state?: unknown }
-      if (content.type === 'text') return evidence('agent', contentText(content.text))
-      if (content.type === 'tool') return toolEvidence(content)
-      return []
-    })
-  })
+  if (part.type === 'tool') {
+    return toolEvidence(part)
+  }
+
+  return []
+}
+
+function assistantEvidence(content: unknown): Evidence[] {
+  if (!Array.isArray(content)) {
+    return []
+  }
+
+  return content.flatMap((part) => evidenceForPart(part))
+}
+
+function evidenceForMessage(message: unknown): Evidence[] {
+  if (!isRecord(message)) {
+    return []
+  }
+
+  if (message.type === 'user') {
+    return evidence('user', contentText(message.text))
+  }
+
+  if (message.type !== 'assistant') {
+    return []
+  }
+
+  return assistantEvidence(message.content)
+}
+
+export function buildEvidence(
+  messages: readonly unknown[],
+  outcome: TerminalOutcome,
+  idleID?: string
+): Evidence[] {
+  return executionMessages(messages, outcome, idleID).flatMap((message) =>
+    evidenceForMessage(message)
+  )
 }
 
 function label(kind: EvidenceKind): string {
-  if (kind === 'user') return 'USER'
-  if (kind === 'agent') return 'AGENT'
+  if (kind === 'user') {
+    return 'USER'
+  }
+
+  if (kind === 'agent') {
+    return 'AGENT'
+  }
+
   return 'TOOL'
 }
 
@@ -109,20 +197,24 @@ function formatEvidence(items: readonly Evidence[]): string {
 
 export function buildSearchQuery(items: readonly Evidence[]): string {
   return items
-    .filter((item) => item.kind === 'user' || item.kind === 'agent')
+    .filter((item) => ['user', 'agent'].includes(item.kind))
     .map((item) => item.text)
     .join('\n\n')
 }
 
 function formatMemories(memories: readonly MemorySearchResult[]): string {
-  if (!memories.length) return '(none)'
+  if (memories.length === 0) {
+    return '(none)'
+  }
 
   return memories
-    .map((memory) => [
-      `id: ${memory.id}`,
-      `text: ${memory.memory}`,
-      ...(memory.score === undefined ? [] : [`score: ${memory.score}`])
-    ].join('\n'))
+    .map((memory) =>
+      [
+        `id: ${memory.id}`,
+        `text: ${memory.memory}`,
+        ...(memory.score === undefined ? [] : [`score: ${memory.score}`])
+      ].join('\n')
+    )
     .join('\n\n')
 }
 
@@ -131,6 +223,8 @@ export function buildExtractionPrompt(
   memories: readonly MemorySearchResult[],
   outcome: TerminalOutcome
 ): string {
+  const evidenceText = formatEvidence(items)
+
   return [
     'Extract and reconcile durable project memories from one terminal OpenCode execution.',
     '',
@@ -147,7 +241,7 @@ export function buildExtractionPrompt(
     `Execution outcome: ${outcome}`,
     '',
     'Execution evidence, in chronological order:',
-    formatEvidence(items) || '(none)',
+    evidenceText === '' ? '(none)' : evidenceText,
     '',
     'Existing memory candidates:',
     formatMemories(memories),
@@ -159,30 +253,4 @@ export function buildExtractionPrompt(
     'Return [] when no change is needed.',
     'Do not return none or delete operations, Markdown, explanations, or additional keys.'
   ].join('\n')
-}
-
-export function parseOperations(value: string, memoryIDs: ReadonlySet<string>): MemoryOperation[] {
-  const parsed: unknown = JSON.parse(value)
-  if (!Array.isArray(parsed)) throw new Error('Memory extractor did not return an array')
-
-  return parsed.map((item) => {
-    if (!item || typeof item !== 'object') throw new Error('Memory extractor returned an invalid operation')
-    const operation = item as { action?: unknown; text?: unknown; memoryID?: unknown }
-    if (typeof operation.action !== 'string' || typeof operation.text !== 'string' || !operation.text.trim()) {
-      throw new Error('Memory extractor returned an invalid operation shape')
-    }
-    const keys = Object.keys(operation)
-    if (operation.action === 'add' && keys.every((key) => key === 'action' || key === 'text')) {
-      return { action: 'add', text: operation.text.trim() }
-    }
-    if (
-      operation.action === 'update'
-      && keys.every((key) => key === 'action' || key === 'memoryID' || key === 'text')
-      && typeof operation.memoryID === 'string'
-      && memoryIDs.has(operation.memoryID)
-    ) {
-      return { action: 'update', memoryID: operation.memoryID, text: operation.text.trim() }
-    }
-    throw new Error('Memory extractor returned an unknown or untrusted memory ID')
-  })
 }

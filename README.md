@@ -22,9 +22,7 @@ Add the Git package and MCP server to `$HOME/.config/opencode/opencode.jsonc`:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git"
-  ],
+  "plugins": ["opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git"],
   "mcp": {
     "servers": {
       "mem0": {
