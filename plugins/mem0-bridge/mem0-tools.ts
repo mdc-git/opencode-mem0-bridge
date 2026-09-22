@@ -4,6 +4,7 @@ import type { Plugin } from '@opencode/plugin'
 import { Agent } from '@opencode/schema/agent'
 import { SessionMessage } from '@opencode/schema'
 import { Session as SessionSchema } from '@opencode/schema/session'
+import type { MemoryOperation } from './memory-operations.ts'
 
 const sessionIdKey = 'sessionID' as const
 const messageIdKey = 'messageID' as const
@@ -16,7 +17,7 @@ type Session = {
   agent?: string
 }
 
-type ToolCall = {
+export type PermittedCall = {
   sessionId: string
   toolId: string
 }
@@ -37,18 +38,6 @@ function hasSearchFields(value: unknown): value is { id: string; memory: string;
   return isRecord(value) && typeof value.id === 'string' && typeof value.memory === 'string'
 }
 
-function parseSearchResult(value: unknown): MemorySearchResult | undefined {
-  if (!hasSearchFields(value)) {
-    return undefined
-  }
-
-  return {
-    id: value.id,
-    memory: value.memory,
-    ...(typeof value.score === 'number' && { score: value.score })
-  }
-}
-
 function searchResults(value: unknown): MemorySearchResult[] {
   if (!isRecord(value)) {
     throw new Error('Mem0 search returned an invalid result')
@@ -59,16 +48,17 @@ function searchResults(value: unknown): MemorySearchResult[] {
     throw new TypeError('Mem0 search returned no results list')
   }
 
-  return results.flatMap((item) => {
-    const result = parseSearchResult(item)
-    return result === undefined ? [] : [result]
-  })
+  return results.filter(hasSearchFields).map((result) => ({
+    id: result.id,
+    memory: result.memory,
+    ...(typeof result.score === 'number' && { score: result.score })
+  }))
 }
 
 export class Mem0Tools {
   constructor(
     private readonly ctx: Plugin.Context,
-    private readonly permittedCalls: Map<string, ToolCall>,
+    private readonly permittedCalls: Map<string, PermittedCall>,
     private readonly signal: AbortSignal
   ) {}
 
@@ -135,7 +125,7 @@ export class Mem0Tools {
     return this.tool(id, deadline)
   }
 
-  async search(session: Session, query: string, limit = 10): Promise<MemorySearchResult[]> {
+  async search(session: Session, query: string, limit: number): Promise<MemorySearchResult[]> {
     const result = await this.execute(session, 'search_memories', {
       query,
       limit
@@ -143,14 +133,19 @@ export class Mem0Tools {
     return searchResults(result)
   }
 
-  async add(session: Session, text: string): Promise<void> {
-    await this.execute(session, 'add_memory', { text })
-  }
+  async write(session: Session, operations: readonly MemoryOperation[]): Promise<void> {
+    let pending: Promise<unknown> = Promise.resolve()
+    for (const operation of operations) {
+      pending = pending.then(async () =>
+        this.execute(session, `${operation.action}_memory`, {
+          ...(operation.action === 'update' && {
+            [memoryIdKey]: operation.memoryId
+          }),
+          text: operation.text
+        })
+      )
+    }
 
-  async update(session: Session, memoryId: string, text: string): Promise<void> {
-    await this.execute(session, 'update_memory', {
-      [memoryIdKey]: memoryId,
-      text
-    })
+    await pending
   }
 }

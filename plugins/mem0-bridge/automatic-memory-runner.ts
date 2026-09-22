@@ -1,19 +1,16 @@
 import type { Model, Plugin } from '@opencode/plugin'
+import { Event, SessionMessage } from '@opencode/schema'
 import type { Mem0Tools } from './mem0-tools.ts'
-import {
-  buildEvidence,
-  buildExtractionPrompt,
-  buildSearchQuery,
-  type TerminalOutcome
-} from './automatic-memory.ts'
+import { buildEvidence, buildExtractionPrompt, type TerminalOutcome } from './automatic-memory.ts'
 import { parseOperations } from './memory-operations.ts'
+
+const EXTRACTION_LIMIT = 10
 
 type RunnerOptions = {
   ctx: Plugin.Context
   mem0: Mem0Tools
   signal: AbortSignal
   extractionModel?: Model.Ref
-  limit: number
 }
 
 type Execution = {
@@ -56,25 +53,8 @@ function eventExecution(event: OpenCodeEvent): Execution | undefined {
   return {
     sessionId: execution.data.sessionID,
     outcome,
-    idleId: execution.id.replace(/^evt_/v, 'msg_')
+    idleId: SessionMessage.ID.fromEvent(Event.ID.make(execution.id))
   }
-}
-
-async function writeOperations(
-  mem0: Mem0Tools,
-  session: Parameters<Mem0Tools['add']>[0],
-  operations: ReturnType<typeof parseOperations>
-): Promise<void> {
-  let pending: Promise<void> = Promise.resolve()
-  for (const operation of operations) {
-    pending = pending.then(async () =>
-      operation.action === 'add'
-        ? mem0.add(session, operation.text)
-        : mem0.update(session, operation.memoryId, operation.text)
-    )
-  }
-
-  await pending
 }
 
 async function processExecution(options: RunnerOptions, execution: Execution): Promise<void> {
@@ -82,12 +62,15 @@ async function processExecution(options: RunnerOptions, execution: Execution): P
   const session = await ctx.session.get({ [sessionIdKey]: execution.sessionId }, { signal })
   const messages = await ctx.session.context({ [sessionIdKey]: execution.sessionId }, { signal })
   const items = buildEvidence(messages, execution.idleId)
-  const searchQuery = buildSearchQuery(items)
+  const searchQuery = items
+    .filter((item) => item.kind !== 'tool')
+    .map((item) => item.text)
+    .join('\n\n')
   if (searchQuery === '') {
     return
   }
 
-  const memories = await mem0.search(session, searchQuery, options.limit)
+  const memories = await mem0.search(session, searchQuery, EXTRACTION_LIMIT)
   const prompt = buildExtractionPrompt(items, memories, execution.outcome)
   const model = options.extractionModel ?? session.model
   const generated = await ctx.generate.text(
@@ -98,7 +81,7 @@ async function processExecution(options: RunnerOptions, execution: Execution): P
     { signal }
   )
   const memoryIds = new Set(memories.map((memory) => memory.id))
-  await writeOperations(mem0, session, parseOperations(generated.text, memoryIds))
+  await mem0.write(session, parseOperations(generated.text, memoryIds))
 }
 
 function enqueueExecution(
@@ -108,9 +91,7 @@ function enqueueExecution(
 ): void {
   const previous = queue.get(execution.sessionId) ?? Promise.resolve()
   const next = previous
-    .then(async () => {
-      await processExecution(options, execution)
-    })
+    .then(async () => processExecution(options, execution))
     .catch(() => undefined)
   queue.set(execution.sessionId, next)
   void next.finally(() => {

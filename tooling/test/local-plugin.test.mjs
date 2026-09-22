@@ -8,6 +8,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { createInterface } from 'node:readline'
 import { test } from 'node:test'
+import { setTimeout as delay } from 'node:timers/promises'
 
 const repository = path.resolve(import.meta.dirname, '../..')
 const localPlugin = path.join(repository, '.opencode')
@@ -92,12 +93,6 @@ function startServer(project, root) {
   return { child, diagnostics: () => diagnostics }
 }
 
-function delay(milliseconds) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds)
-  })
-}
-
 async function stopServer(server) {
   if (server.exitCode !== null) {
     return
@@ -113,26 +108,25 @@ async function stopServer(server) {
   }
 }
 
-function locationQuery(project) {
-  return `?location%5Bdirectory%5D=${encodeURIComponent(project)}`
-}
-
 async function plugin(base, project) {
-  const plugins = await api(base, `/api/plugin${locationQuery(project)}`)
+  const plugins = await api(
+    base,
+    `/api/plugin?location%5Bdirectory%5D=${encodeURIComponent(project)}`
+  )
   return plugins.data.find((item) => item.id === 'local.mem0-bridge')
 }
 
 function waitForPlugin(base, project, diagnostics) {
   return new Promise((resolve, reject) => {
     let lastPlugin
-    const finish = (timer, interval, result) => {
+    const finish = (result) => {
       clearTimeout(timer)
       clearInterval(interval)
       result()
     }
 
     const timer = setTimeout(() => {
-      finish(timer, interval, () =>
+      finish(() =>
         reject(
           new Error(
             `local mem0 bridge plugin did not activate\nstate=${JSON.stringify(lastPlugin, null, 2)}\nstderr=${diagnostics()}`
@@ -145,10 +139,10 @@ function waitForPlugin(base, project, diagnostics) {
         .then((current) => {
           lastPlugin = current
           if (current?.state?.status === 'active') {
-            finish(timer, interval, () => resolve(current))
+            finish(() => resolve(current))
           }
         })
-        .catch((error) => finish(timer, interval, () => reject(error)))
+        .catch((error) => finish(() => reject(error)))
     }
 
     const interval = setInterval(check, 100)

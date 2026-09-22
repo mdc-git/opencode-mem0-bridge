@@ -1,22 +1,14 @@
 import { readFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 import { Model, Plugin, Provider, Skill } from '@opencode/plugin'
 import type { PermissionEvaluation } from '@opencode/plugin/promise/permission'
 import type { SessionContext } from '@opencode/plugin/promise/session'
 import { AbsolutePath } from '@opencode/schema/schema'
 import { automaticMemory } from './automatic-memory-runner.ts'
-import { Mem0Tools } from './mem0-tools.ts'
+import { Mem0Tools, type PermittedCall } from './mem0-tools.ts'
 
 const RETRIEVAL_LIMIT = 3
-const EXTRACTION_LIMIT = 10
-const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
-const SKILL_PATH = resolve(PLUGIN_DIR, 'project-memory.md')
-
-type PermittedCall = {
-  sessionId: string
-  toolId: string
-}
+const SKILL_PATH = resolve(import.meta.dirname, 'project-memory.md')
 
 type MemoryCache = Map<string, { messageId: string; memories: string[] }>
 
@@ -42,20 +34,8 @@ function latestUserMessage(messages: readonly ContextMessage[]): UserMessage | u
   }
 
   return {
-    ...(message.id !== undefined && { id: message.id }),
+    id: message.id,
     text: userMessageText(message)
-  }
-}
-
-function selectorParts(selector: string): { base: string; variant?: string } {
-  const separator = selector.indexOf('#')
-  if (separator === -1) {
-    return { base: selector }
-  }
-
-  return {
-    base: selector.slice(0, separator),
-    variant: selector.slice(separator + 1)
   }
 }
 
@@ -64,37 +44,24 @@ function parseModelSelector(value: unknown): Model.Ref | undefined {
     return undefined
   }
 
-  return modelReference(selectorParts(value.trim()), value)
+  return modelReference(value)
 }
 
-function modelReference(selector: { base: string; variant?: string }, original: string): Model.Ref {
-  const separator = modelSeparator(selector.base, original)
-
-  if (selector.variant === '') {
-    throw new Error(`Invalid extractionModel selector: ${original}`)
+function modelReference(value: string): Model.Ref {
+  const match = /^(?<provider>[^#\/]+)\/(?<model>[^#]+)(?:#(?<variant>.+))?$/sv.exec(value.trim())
+  if (match === null) {
+    throw new Error(`Invalid extractionModel selector: ${value}`)
   }
 
+  const { provider, model, variant } = match.groups!
   const providerKey = 'providerID' as const
   return {
-    [providerKey]: Provider.ID.make(selector.base.slice(0, separator)),
-    id: Model.ID.make(selector.base.slice(separator + 1)),
-    ...(selector.variant !== undefined && {
-      variant: Model.VariantID.make(selector.variant)
+    [providerKey]: Provider.ID.make(provider),
+    id: Model.ID.make(model),
+    ...(variant !== undefined && {
+      variant: Model.VariantID.make(variant)
     })
   }
-}
-
-function modelSeparator(base: string, original: string): number {
-  const separator = base.indexOf('/')
-  if (separator <= 0) {
-    throw new Error(`Invalid extractionModel selector: ${original}`)
-  }
-
-  if (separator === base.length - 1) {
-    throw new Error(`Invalid extractionModel selector: ${original}`)
-  }
-
-  return separator
 }
 
 async function registerSkill(ctx: Plugin.Context) {
@@ -111,33 +78,16 @@ async function registerSkill(ctx: Plugin.Context) {
   })
 }
 
-function allowPermittedCall(
-  event: PermissionEvaluation,
-  permittedCalls: ReadonlyMap<string, PermittedCall>
-): void {
-  const permitted = permittedCall(event, permittedCalls)
-  if (event.effect === 'ask' && isMatchingPermittedCall(event, permitted)) {
-    event.effect = 'allow'
-  }
-}
-
 function permittedCall(
   event: PermissionEvaluation,
   permittedCalls: ReadonlyMap<string, PermittedCall>
 ): PermittedCall | undefined {
   const { source } = event
-  if (source?.type !== 'tool') {
+  if (event.effect !== 'ask' || source?.type !== 'tool') {
     return undefined
   }
 
   return permittedCalls.get(source.id)
-}
-
-function isMatchingPermittedCall(
-  event: PermissionEvaluation,
-  permitted: PermittedCall | undefined
-): boolean {
-  return permitted?.sessionId === event.sessionID && permitted.toolId === event.action
 }
 
 async function retrieveMemories(
@@ -200,25 +150,27 @@ export default Plugin.define({
   id: 'mdc-git.mem0-bridge',
   async setup(ctx) {
     const skill = await registerSkill(ctx)
-    const isAutomaticExtraction = ctx.options.automaticExtraction === true
     const extractionModel = parseModelSelector(ctx.options.extractionModel)
     const permittedCalls = new Map<string, PermittedCall>()
     const controller = new AbortController()
     const mem0 = new Mem0Tools(ctx, permittedCalls, controller.signal)
     const cache: MemoryCache = new Map()
     const permission = await ctx.permission.hook('evaluate', (event: PermissionEvaluation) => {
-      allowPermittedCall(event, permittedCalls)
+      const permitted = permittedCall(event, permittedCalls)
+      if (permitted?.sessionId === event.sessionID && permitted.toolId === event.action) {
+        event.effect = 'allow'
+      }
     })
     const context = await registerContext(ctx, mem0, cache)
-    const extractionTask = isAutomaticExtraction
-      ? automaticMemory({
-          ctx,
-          mem0,
-          signal: controller.signal,
-          extractionModel,
-          limit: EXTRACTION_LIMIT
-        })
-      : undefined
+    const extractionTask =
+      ctx.options.automaticExtraction === true
+        ? automaticMemory({
+            ctx,
+            mem0,
+            signal: controller.signal,
+            extractionModel
+          })
+        : undefined
 
     return async () => {
       controller.abort()

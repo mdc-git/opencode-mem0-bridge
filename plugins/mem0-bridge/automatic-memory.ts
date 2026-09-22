@@ -6,7 +6,6 @@ const SENTENCE_ENDS = ['。', '！', '？', '.', '!', '?']
 
 type ContextMessage = Awaited<ReturnType<Plugin.Context['session']['context']>>[number]
 type AssistantPart = Extract<ContextMessage, { type: 'assistant' }>['content'][number]
-type ToolPart = Extract<AssistantPart, { type: 'tool' }>
 
 export type TerminalOutcome = Extract<ContextMessage, { type: 'idle' }>['outcome']
 
@@ -38,15 +37,6 @@ function evidence(kind: Evidence['kind'], text: string): Evidence[] {
   return [{ kind, text: truncateForSync(trimmed) }]
 }
 
-function toolEvidence(part: ToolPart): Evidence[] {
-  const input = JSON.stringify(part.state.input)
-  if (part.state.status === 'error') {
-    return evidence('tool', `TOOL_ERROR ${part.name}(${input}) -> ${part.state.error.message}`)
-  }
-
-  return evidence('tool', `TOOL_CALL ${part.name}(${input})`)
-}
-
 function executionMessages(
   messages: readonly ContextMessage[],
   idleId: string
@@ -70,33 +60,30 @@ function evidenceForPart(part: AssistantPart): Evidence[] {
   }
 
   if (part.type === 'tool') {
-    return toolEvidence(part)
-  }
-
-  return []
-}
-
-function evidenceForMessage(message: ContextMessage): Evidence[] {
-  if (message.type === 'user') {
-    return evidence('user', message.text)
-  }
-
-  if (message.type === 'assistant') {
-    return message.content.flatMap((part) => evidenceForPart(part))
+    const input = JSON.stringify(part.state.input)
+    return evidence(
+      'tool',
+      part.state.status === 'error'
+        ? `TOOL_ERROR ${part.name}(${input}) -> ${part.state.error.message}`
+        : `TOOL_CALL ${part.name}(${input})`
+    )
   }
 
   return []
 }
 
 export function buildEvidence(messages: readonly ContextMessage[], idleId: string): Evidence[] {
-  return executionMessages(messages, idleId).flatMap((message) => evidenceForMessage(message))
-}
+  return executionMessages(messages, idleId).flatMap((message) => {
+    if (message.type === 'user') {
+      return evidence('user', message.text)
+    }
 
-export function buildSearchQuery(items: readonly Evidence[]): string {
-  return items
-    .filter((item) => item.kind !== 'tool')
-    .map((item) => item.text)
-    .join('\n\n')
+    if (message.type === 'assistant') {
+      return message.content.flatMap((part) => evidenceForPart(part))
+    }
+
+    return []
+  })
 }
 
 function formatMemories(memories: readonly MemorySearchResult[]): string {
