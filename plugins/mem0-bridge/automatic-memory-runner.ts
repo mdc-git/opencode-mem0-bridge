@@ -58,8 +58,21 @@ function eventExecution(event: OpenCodeEvent): Execution | undefined {
 }
 
 async function processExecution(options: RunnerOptions, execution: Execution): Promise<void> {
-  const { ctx, mem0, signal } = options
+  const { ctx, signal } = options
   const session = await ctx.session.get({ [sessionIdKey]: execution.sessionId }, { signal })
+  if (session.location.directory !== ctx.location.directory) {
+    return
+  }
+
+  await processLocalExecution(options, execution, session)
+}
+
+async function processLocalExecution(
+  options: RunnerOptions,
+  execution: Execution,
+  session: Awaited<ReturnType<Plugin.Context['session']['get']>>
+): Promise<void> {
+  const { ctx, mem0, signal } = options
   const messages = await ctx.session.context({ [sessionIdKey]: execution.sessionId }, { signal })
   const items = buildEvidence(messages, execution.idleId)
   const searchQuery = items
