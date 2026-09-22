@@ -1,5 +1,4 @@
-import type { Plugin } from '@opencode/plugin'
-import type { Model } from '@opencode/schema/model'
+import type { Model, Plugin } from '@opencode/plugin'
 import type { Mem0Tools } from './mem0-tools.ts'
 import {
   buildEvidence,
@@ -7,21 +6,13 @@ import {
   buildSearchQuery,
   type TerminalOutcome
 } from './automatic-memory.ts'
-import { parseOperations, type MemoryOperation } from './memory-operations.ts'
-
-export type ModelRef = Model.Ref
-
-type Session = {
-  id: string
-  agent?: string
-  model?: ModelRef
-}
+import { parseOperations } from './memory-operations.ts'
 
 type RunnerOptions = {
   ctx: Plugin.Context
   mem0: Mem0Tools
-  controller: AbortController
-  extractionModel?: ModelRef
+  signal: AbortSignal
+  extractionModel?: Model.Ref
   limit: number
 }
 
@@ -31,119 +22,83 @@ type Execution = {
   idleId: string
 }
 
+type OpenCodeEvent =
+  ReturnType<Plugin.Context['event']['subscribe']> extends AsyncIterable<infer Event>
+    ? Event
+    : never
+
+type ExecutionEvent = Extract<
+  OpenCodeEvent,
+  {
+    type:
+      'session.execution.succeeded' | 'session.execution.failed' | 'session.execution.interrupted'
+  }
+>
+
 const sessionIdKey = 'sessionID' as const
-const executionOutcomes = new Map<string, TerminalOutcome>([
+const executionOutcomes = new Map<ExecutionEvent['type'], TerminalOutcome>([
   ['session.execution.succeeded', 'succeeded'],
   ['session.execution.failed', 'failed'],
   ['session.execution.interrupted', 'interrupted']
 ])
 
-function eventData(event: {
-  type: string
-  id: string
-  data: unknown
-}): Record<string, unknown> | undefined {
-  if (event.data === null || typeof event.data !== 'object') {
-    return undefined
-  }
-
-  return event.data as Record<string, unknown>
-}
-
-function executionOutcome(
-  type: string,
-  data: Record<string, unknown>
-): TerminalOutcome | undefined {
-  const outcome = executionOutcomes.get(type)
+function eventExecution(event: OpenCodeEvent): Execution | undefined {
+  const outcome = executionOutcomes.get(event.type as ExecutionEvent['type'])
   if (outcome === undefined) {
     return undefined
   }
 
-  return outcome === 'interrupted' && data.reason === 'shutdown' ? undefined : outcome
-}
-
-function eventIdleId(id: string): string {
-  return id.startsWith('evt_') ? `msg_${id.slice(4)}` : id
-}
-
-function eventExecution(event: { type: string; id: string; data: unknown }): Execution | undefined {
-  const data = eventData(event)
-  if (data === undefined) {
+  const execution = event as ExecutionEvent
+  if (execution.type === 'session.execution.interrupted' && execution.data.reason === 'shutdown') {
     return undefined
   }
 
-  const sessionId = data[sessionIdKey]
-  if (typeof sessionId !== 'string') {
-    return undefined
+  return {
+    sessionId: execution.data.sessionID,
+    outcome,
+    idleId: execution.id.replace(/^evt_/v, 'msg_')
   }
-
-  const outcome = executionOutcome(event.type, data)
-  if (outcome === undefined) {
-    return undefined
-  }
-
-  return { sessionId, outcome, idleId: eventIdleId(event.id) }
-}
-
-async function writeOperation(
-  mem0: Mem0Tools,
-  session: Session,
-  operation: MemoryOperation
-): Promise<void> {
-  if (operation.action === 'add') {
-    await mem0.add(session, operation.text)
-    return
-  }
-
-  await mem0.update(session, operation.memoryId, operation.text)
 }
 
 async function writeOperations(
   mem0: Mem0Tools,
-  session: Session,
-  operations: readonly MemoryOperation[]
+  session: Parameters<Mem0Tools['add']>[0],
+  operations: ReturnType<typeof parseOperations>
 ): Promise<void> {
-  let pending = Promise.resolve()
+  let pending: Promise<void> = Promise.resolve()
   for (const operation of operations) {
-    pending = pending.then(async () => writeOperation(mem0, session, operation))
+    pending = pending.then(async () =>
+      operation.action === 'add'
+        ? mem0.add(session, operation.text)
+        : mem0.update(session, operation.memoryId, operation.text)
+    )
   }
 
   await pending
 }
 
-async function processExecution(
-  options: RunnerOptions,
-  sessionId: string,
-  outcome: TerminalOutcome,
-  idleId: string
-): Promise<void> {
-  const { controller, ctx, mem0 } = options
-  const session = (await ctx.session.get(
-    { [sessionIdKey]: sessionId },
-    { signal: controller.signal }
-  )) as Session
-  const messages = await ctx.session.context(
-    { [sessionIdKey]: sessionId },
-    { signal: controller.signal }
-  )
-  const items = buildEvidence(messages, outcome, idleId)
+async function processExecution(options: RunnerOptions, execution: Execution): Promise<void> {
+  const { ctx, mem0, signal } = options
+  const session = await ctx.session.get({ [sessionIdKey]: execution.sessionId }, { signal })
+  const messages = await ctx.session.context({ [sessionIdKey]: execution.sessionId }, { signal })
+  const items = buildEvidence(messages, execution.idleId)
   const searchQuery = buildSearchQuery(items)
   if (searchQuery === '') {
     return
   }
 
   const memories = await mem0.search(session, searchQuery, options.limit)
-  const prompt = buildExtractionPrompt(items, memories, outcome)
+  const prompt = buildExtractionPrompt(items, memories, execution.outcome)
   const model = options.extractionModel ?? session.model
   const generated = await ctx.generate.text(
     {
       prompt,
       ...(model !== undefined && { model })
     },
-    { signal: controller.signal }
+    { signal }
   )
-  const operations = parseOperations(generated.text, new Set(memories.map((memory) => memory.id)))
-  await writeOperations(mem0, session, operations)
+  const memoryIds = new Set(memories.map((memory) => memory.id))
+  await writeOperations(mem0, session, parseOperations(generated.text, memoryIds))
 }
 
 function enqueueExecution(
@@ -153,10 +108,9 @@ function enqueueExecution(
 ): void {
   const previous = queue.get(execution.sessionId) ?? Promise.resolve()
   const next = previous
-    .catch(() => undefined)
-    .then(async () =>
-      processExecution(options, execution.sessionId, execution.outcome, execution.idleId)
-    )
+    .then(async () => {
+      await processExecution(options, execution)
+    })
     .catch(() => undefined)
   queue.set(execution.sessionId, next)
   void next.finally(() => {
@@ -171,7 +125,7 @@ export async function automaticMemory(options: RunnerOptions): Promise<void> {
 
   try {
     for await (const event of options.ctx.event.subscribe({
-      signal: options.controller.signal
+      signal: options.signal
     })) {
       const execution = eventExecution(event)
       if (execution !== undefined) {
@@ -180,7 +134,7 @@ export async function automaticMemory(options: RunnerOptions): Promise<void> {
     }
   } catch {
     // Cleanup aborts the event stream. Extraction is intentionally best effort.
-  } finally {
-    await Promise.all(queue.values())
   }
+
+  await Promise.all(queue.values())
 }

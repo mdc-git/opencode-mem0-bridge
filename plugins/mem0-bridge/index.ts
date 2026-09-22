@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { Model, Plugin, Provider, Skill } from '@opencode/plugin'
 import type { PermissionEvaluation } from '@opencode/plugin/promise/permission'
 import { AbsolutePath } from '@opencode/schema/schema'
-import { automaticMemory, type ModelRef } from './automatic-memory-runner.ts'
+import { automaticMemory } from './automatic-memory-runner.ts'
 import { Mem0Tools } from './mem0-tools.ts'
 
 const RETRIEVAL_LIMIT = 3
@@ -91,7 +91,7 @@ function selectorParts(selector: string): { base: string; variant?: string } {
   }
 }
 
-function parseModelSelector(value: unknown): ModelRef | undefined {
+function parseModelSelector(value: unknown): Model.Ref | undefined {
   if (typeof value !== 'string' || value.trim() === '') {
     return undefined
   }
@@ -99,7 +99,7 @@ function parseModelSelector(value: unknown): ModelRef | undefined {
   return modelReference(selectorParts(value.trim()), value)
 }
 
-function modelReference(selector: { base: string; variant?: string }, original: string): ModelRef {
+function modelReference(selector: { base: string; variant?: string }, original: string): Model.Ref {
   const separator = modelSeparator(selector.base, original)
 
   if (selector.variant === '') {
@@ -265,7 +265,7 @@ export default Plugin.define({
       ? automaticMemory({
           ctx,
           mem0,
-          controller,
+          signal: controller.signal,
           extractionModel,
           limit: EXTRACTION_LIMIT
         })
@@ -273,7 +273,7 @@ export default Plugin.define({
 
     return async () => {
       controller.abort()
-      await extractionTask?.catch(() => undefined)
+      await extractionTask
       await context.dispose()
       await permission.dispose()
       cache.clear()
