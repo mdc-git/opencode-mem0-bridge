@@ -1,8 +1,11 @@
-export type MemoryOperation =
+type MemoryOperation =
   { action: 'add'; text: string } | { action: 'update'; memoryId: string; text: string }
 
-const ADD_KEYS = new Set(['action', 'text'])
-const UPDATE_KEYS = new Set(['action', 'memoryID', 'text'])
+const OPERATION_KEYS = new Map([
+  ['add', new Set(['action', 'text'])],
+  ['update', new Set(['action', 'memoryID', 'text'])]
+])
+const memoryIdKey = 'memoryID' as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object'
@@ -12,60 +15,10 @@ function isValidText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== ''
 }
 
-function hasUnknownKey(keys: readonly string[], allowed: ReadonlySet<string>): boolean {
-  return keys.some((key) => !allowed.has(key))
-}
-
-function isKnownMemoryId(value: unknown, memoryIds: ReadonlySet<string>): value is string {
-  return typeof value === 'string' && memoryIds.has(value)
-}
-
-function parseAddOperation(
-  action: string,
-  text: string,
-  keys: readonly string[]
-): MemoryOperation | undefined {
-  if (action !== 'add') {
-    return undefined
-  }
-
-  if (keys.some((key) => !ADD_KEYS.has(key))) {
-    return undefined
-  }
-
-  return { action: 'add', text: text.trim() }
-}
-
-type UpdateInput = {
-  action: string
-  text: string
-  value: Record<string, unknown>
-  keys: readonly string[]
-  memoryIds: ReadonlySet<string>
-}
-
-function parseUpdateOperation(input: UpdateInput): MemoryOperation | undefined {
-  if (input.action !== 'update') {
-    return undefined
-  }
-
-  if (hasUnknownKey(input.keys, UPDATE_KEYS)) {
-    return undefined
-  }
-
-  const memoryId = input.value.memoryID
-  if (!isKnownMemoryId(memoryId, input.memoryIds)) {
-    return undefined
-  }
-
-  return { action: 'update', memoryId, text: input.text.trim() }
-}
-
 type OperationInput = {
   action: string
   text: string
   value: Record<string, unknown>
-  keys: string[]
 }
 
 function operationInput(value: unknown): OperationInput {
@@ -78,22 +31,34 @@ function operationInput(value: unknown): OperationInput {
     throw new Error('Memory extractor returned an invalid operation shape')
   }
 
-  return { action, text, value, keys: Object.keys(value) }
+  return { action, text, value }
+}
+
+function isKnownMemoryId(value: unknown, memoryIds: ReadonlySet<string>): value is string {
+  return typeof value === 'string' && memoryIds.has(value)
+}
+
+function hasAllowedKeys(input: OperationInput): boolean {
+  const allowedKeys = OPERATION_KEYS.get(input.action)
+  return allowedKeys !== undefined && Object.keys(input.value).every((key) => allowedKeys.has(key))
 }
 
 function parseOperation(value: unknown, memoryIds: ReadonlySet<string>): MemoryOperation {
   const input = operationInput(value)
-  const add = parseAddOperation(input.action, input.text, input.keys)
-  if (add !== undefined) {
-    return add
+  if (!hasAllowedKeys(input)) {
+    throw new Error('Memory extractor returned an unknown or untrusted memory ID')
   }
 
-  const update = parseUpdateOperation({ ...input, memoryIds })
-  if (update !== undefined) {
-    return update
+  if (input.action === 'add') {
+    return { action: 'add', text: input.text.trim() }
   }
 
-  throw new Error('Memory extractor returned an unknown or untrusted memory ID')
+  const memoryId = input.value[memoryIdKey]
+  if (!isKnownMemoryId(memoryId, memoryIds)) {
+    throw new Error('Memory extractor returned an unknown or untrusted memory ID')
+  }
+
+  return { action: 'update', memoryId, text: input.text.trim() }
 }
 
 export function parseOperations(value: string, memoryIds: ReadonlySet<string>): MemoryOperation[] {

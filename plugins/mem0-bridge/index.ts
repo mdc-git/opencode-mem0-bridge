@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Model, Plugin, Provider, Skill } from '@opencode/plugin'
 import type { PermissionEvaluation } from '@opencode/plugin/promise/permission'
+import type { SessionContext } from '@opencode/plugin/promise/session'
 import { AbsolutePath } from '@opencode/schema/schema'
 import { automaticMemory } from './automatic-memory-runner.ts'
 import { Mem0Tools } from './mem0-tools.ts'
@@ -21,60 +22,27 @@ type MemoryCache = Map<string, { messageId: string; memories: string[] }>
 
 type UserMessage = { id?: string; text: string }
 
-function partText(part: { type?: unknown; text?: unknown }): string {
-  if (part.type !== 'text') {
+type ContextMessage = SessionContext['messages'][number]
+
+function userMessageText(message: ContextMessage): string {
+  if (message.role !== 'user') {
     return ''
   }
 
-  if (typeof part.text !== 'string') {
-    return ''
-  }
-
-  return part.text
+  return message.content
+    .flatMap((part) => (part.type === 'text' ? [part.text] : []))
+    .join('\n')
+    .trim()
 }
 
-function textPart(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    return ''
-  }
-
-  return partText(value)
-}
-
-function contentText(content: unknown): string {
-  if (typeof content === 'string') {
-    return content
-  }
-
-  if (!Array.isArray(content)) {
-    return ''
-  }
-
-  return content.map((part) => textPart(part)).join('\n')
-}
-
-function userMessageText(message: unknown): string {
-  if (message === null || typeof message !== 'object') {
-    return ''
-  }
-
-  const value = message as { role?: unknown; content?: unknown }
-  if (value.role !== 'user') {
-    return ''
-  }
-
-  return contentText(value.content).trim()
-}
-
-function latestUserMessage(messages: readonly unknown[]): UserMessage | undefined {
+function latestUserMessage(messages: readonly ContextMessage[]): UserMessage | undefined {
   const message = messages.findLast((candidate) => userMessageText(candidate) !== '')
   if (message === undefined) {
     return undefined
   }
 
-  const value = message as { id?: unknown }
   return {
-    ...(typeof value.id === 'string' && { id: value.id }),
+    ...(message.id !== undefined && { id: message.id }),
     text: userMessageText(message)
   }
 }
@@ -148,49 +116,28 @@ function allowPermittedCall(
   permittedCalls: ReadonlyMap<string, PermittedCall>
 ): void {
   const permitted = permittedCall(event, permittedCalls)
-  if (permitted !== undefined && event.effect === 'ask') {
+  if (event.effect === 'ask' && isMatchingPermittedCall(event, permitted)) {
     event.effect = 'allow'
   }
-}
-
-function toolSource(event: PermissionEvaluation) {
-  const { source } = event
-  if (source?.type !== 'tool') {
-    return undefined
-  }
-
-  return source
 }
 
 function permittedCall(
   event: PermissionEvaluation,
   permittedCalls: ReadonlyMap<string, PermittedCall>
 ): PermittedCall | undefined {
-  const source = toolSource(event)
-  if (source === undefined) {
+  const { source } = event
+  if (source?.type !== 'tool') {
     return undefined
   }
 
-  const permitted = permittedCalls.get(source.id)
-  if (permitted === undefined) {
-    return undefined
-  }
-
-  if (!isMatchingPermittedCall(event, permitted)) {
-    return undefined
-  }
-
-  return permitted
+  return permittedCalls.get(source.id)
 }
 
-function isMatchingPermittedCall(event: PermissionEvaluation, permitted: PermittedCall): boolean {
-  return permitted.sessionId === event.sessionID && permitted.toolId === event.action
-}
-
-async function registerPermission(ctx: Plugin.Context, permittedCalls: Map<string, PermittedCall>) {
-  return ctx.permission.hook('evaluate', (event: PermissionEvaluation) => {
-    allowPermittedCall(event, permittedCalls)
-  })
+function isMatchingPermittedCall(
+  event: PermissionEvaluation,
+  permitted: PermittedCall | undefined
+): boolean {
+  return permitted?.sessionId === event.sessionID && permitted.toolId === event.action
 }
 
 async function retrieveMemories(
@@ -259,7 +206,9 @@ export default Plugin.define({
     const controller = new AbortController()
     const mem0 = new Mem0Tools(ctx, permittedCalls, controller.signal)
     const cache: MemoryCache = new Map()
-    const permission = await registerPermission(ctx, permittedCalls)
+    const permission = await ctx.permission.hook('evaluate', (event: PermissionEvaluation) => {
+      allowPermittedCall(event, permittedCalls)
+    })
     const context = await registerContext(ctx, mem0, cache)
     const extractionTask = isAutomaticExtraction
       ? automaticMemory({

@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises'
 import { CallID } from '@opencode/plugin/promise/tool'
 import type { Plugin } from '@opencode/plugin'
 import { Agent } from '@opencode/schema/agent'
@@ -28,99 +29,32 @@ export type MemorySearchResult = {
   score?: number
 }
 
-type ToolResult = {
-  output?: unknown
-  content?: ReadonlyArray<{ type?: string; text?: string }>
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object'
 }
 
-function toolId(server: string, name: string): string {
-  return `${server}_${name}`.replaceAll(/[^\w\-]/gv, '_')
-}
-
-async function pause(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve()
-    }, milliseconds)
-  })
-}
-
-function parseTextResult(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return text
-  }
-}
-
-function contentValue(content: ToolResult['content']): unknown {
-  const text = content?.find((part) => part.type === 'text')?.text
-  if (text === undefined) {
-    return undefined
-  }
-
-  return parseTextResult(text)
-}
-
-function resultValue(result: unknown): unknown {
-  if (result === null || typeof result !== 'object') {
-    return result
-  }
-
-  const value = result as ToolResult
-  return value.output === undefined ? contentValue(value.content) : value.output
-}
-
-function searchFields(value: unknown):
-  | {
-      id: string
-      memory: string
-      score?: unknown
-    }
-  | undefined {
-  if (!isRecord(value)) {
-    return undefined
-  }
-
-  const { id, memory, score } = value as {
-    id?: unknown
-    memory?: unknown
-    score?: unknown
-  }
-  if (typeof id !== 'string') {
-    return undefined
-  }
-
-  if (typeof memory !== 'string') {
-    return undefined
-  }
-
-  return { id, memory, score }
+function hasSearchFields(value: unknown): value is { id: string; memory: string; score?: unknown } {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.memory === 'string'
 }
 
 function parseSearchResult(value: unknown): MemorySearchResult | undefined {
-  const fields = searchFields(value)
-  if (fields === undefined) {
+  if (!hasSearchFields(value)) {
     return undefined
   }
 
   return {
-    id: fields.id,
-    memory: fields.memory,
-    ...(typeof fields.score === 'number' && { score: fields.score })
+    id: value.id,
+    memory: value.memory,
+    ...(typeof value.score === 'number' && { score: value.score })
   }
 }
 
 function searchResults(value: unknown): MemorySearchResult[] {
-  if (value === null || typeof value !== 'object') {
+  if (!isRecord(value)) {
     throw new Error('Mem0 search returned an invalid result')
   }
 
-  const { results } = value as { results?: unknown }
+  const { results } = value
   if (!Array.isArray(results)) {
     throw new TypeError('Mem0 search returned no results list')
   }
@@ -146,16 +80,15 @@ export class Mem0Tools {
     const agent = await this.agent(session)
 
     const id = CallID.make(crypto.randomUUID())
-    const idText = id
-    const effectiveToolId = toolId('mem0', name)
+    const effectiveToolId = `mem0_${name}`
     const tool = await this.tool(effectiveToolId)
 
-    this.permittedCalls.set(idText, {
+    this.permittedCalls.set(id, {
       sessionId: session.id,
       toolId: effectiveToolId
     })
     try {
-      return await tool.execute(input, {
+      const result = await tool.execute(input, {
         [sessionIdKey]: SessionSchema.ID.make(session.id),
         agent: Agent.ID.make(agent),
         [messageIdKey]: SessionMessage.ID.create(),
@@ -165,8 +98,9 @@ export class Mem0Tools {
           await Promise.resolve()
         }
       })
+      return result.output
     } finally {
-      this.permittedCalls.delete(idText)
+      this.permittedCalls.delete(id)
     }
   }
 
@@ -197,7 +131,7 @@ export class Mem0Tools {
       throw new Error(`MCP tool ${id} is unavailable`)
     }
 
-    await pause(TOOL_RETRY_MS)
+    await delay(TOOL_RETRY_MS)
     return this.tool(id, deadline)
   }
 
@@ -206,7 +140,7 @@ export class Mem0Tools {
       query,
       limit
     })
-    return searchResults(resultValue(result))
+    return searchResults(result)
   }
 
   async add(session: Session, text: string): Promise<void> {
