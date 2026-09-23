@@ -5,7 +5,7 @@ An OpenCode V2 server plugin that connects OpenCode to a project-scoped local
 memories for new prompts and can optionally extract durable memories after an
 OpenCode execution.
 
-> **Data handling:** Retrieved memories are added as untrusted reference context.
+> **Data handling:** Retrieved memories are added as reference context, not instructions.
 > When automatic extraction is enabled, execution evidence is sent to the
 > configured OpenCode extraction model. Enable it only when that provider and
 > data flow are appropriate for your project.
@@ -102,8 +102,10 @@ What does project memory say about this repository's development tooling?
 ```
 
 The bridge searches Mem0 and supplies matching results as transient chronological
-system context for that user turn. Verify retrieved memories against the repository
-before relying on them.
+system context for that user turn. Repository or technical claims that affect
+implementation correctness should be verified against current project evidence;
+contextual user-provided facts and preferences can be used unless current evidence
+contradicts them.
 
 ## Automatic extraction
 
