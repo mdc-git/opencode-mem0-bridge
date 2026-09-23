@@ -13,7 +13,7 @@ OpenCode execution.
 ## What it provides
 
 - Retrieves up to three relevant memories for each latest user message; repeated context-hook calls for that same message use the session cache.
-- Adds retrieved memories to the model context as `<project_memory>` reference material.
+- Adds retrieved memories as transient chronological system context immediately after the user message that triggered retrieval, using `<project_memory>` reference material.
 - Registers the `project-memory` skill with OpenCode.
 - Optionally reconciles durable memories after successful, failed, or user-interrupted executions.
 
@@ -101,8 +101,9 @@ Start a new turn and ask:
 What does project memory say about this repository's development tooling?
 ```
 
-The bridge searches Mem0 and supplies matching results to the model as reference
-context. Verify retrieved memories against the repository before relying on them.
+The bridge searches Mem0 and supplies matching results as transient chronological
+system context for that user turn. Verify retrieved memories against the repository
+before relying on them.
 
 ## Automatic extraction
 
