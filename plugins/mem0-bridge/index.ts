@@ -72,13 +72,13 @@ function permittedCall(
   return permittedCalls.get(source.id)
 }
 
-function withoutMemoryMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+function withoutMemoryMetadata(\n  metadata: Record<string, unknown> | undefined\n): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(metadata ?? {}).filter(([key]) => key !== MEMORY_METADATA_KEY)
   )
 }
 
-function renderMemorySnapshot(memories: readonly { memory: string }[]): string | undefined {
+function renderMemorySnapshot(memories: ReadonlyArray<{ memory: string }>): string | undefined {
   if (memories.length === 0) {
     return undefined
   }
