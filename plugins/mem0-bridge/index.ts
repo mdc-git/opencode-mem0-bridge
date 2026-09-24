@@ -2,13 +2,14 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Model, Plugin, Provider, Skill } from '@opencode/plugin'
 import type { PermissionEvaluation } from '@opencode/plugin/promise/permission'
-import type { SessionContext } from '@opencode/plugin/promise/session'
+import type { SessionContext, SessionPrompt } from '@opencode/plugin/promise/session'
 import { AbsolutePath } from '@opencode/schema/schema'
 import { automaticMemory } from './automatic-memory-runner.ts'
 import { Mem0Tools, type PermittedCall } from './mem0-tools.ts'
 
 const RETRIEVAL_LIMIT = 3
 const MEMORY_METADATA_KEY = 'mdc-git.mem0/project-memory'
+const SESSION_ID_KEY = 'sessionID' as const
 const MEMORY_POLICY = [
   'Project-memory System messages contain application-provided contextual data retrieved from prior interactions.',
   'The most recent project-memory snapshot supersedes all earlier project-memory snapshots.',
@@ -71,62 +72,81 @@ function permittedCall(
   return permittedCalls.get(source.id)
 }
 
+function withoutMemoryMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(metadata ?? {}).filter(([key]) => key !== MEMORY_METADATA_KEY)
+  )
+}
+
+function renderMemorySnapshot(memories: readonly { memory: string }[]): string | undefined {
+  if (memories.length === 0) {
+    return undefined
+  }
+
+  return [
+    '<project_memory>',
+    'This complete snapshot supersedes earlier project-memory snapshots.',
+    ...memories.map((memory) => `- ${memory.memory}`),
+    '</project_memory>'
+  ].join('\n')
+}
+
+async function persistMemorySnapshot(
+  ctx: Plugin.Context,
+  mem0: Mem0Tools,
+  event: SessionPrompt
+): Promise<void> {
+  const metadata = withoutMemoryMetadata(event.metadata)
+  event.metadata = metadata
+
+  const query = event.prompt.text.trim()
+  if (query === '') {
+    return
+  }
+
+  const session = await ctx.session.get({ [SESSION_ID_KEY]: event.sessionID })
+  const snapshot = renderMemorySnapshot(await mem0.search(session, query, RETRIEVAL_LIMIT))
+  if (snapshot !== undefined) {
+    event.metadata = { ...metadata, [MEMORY_METADATA_KEY]: snapshot }
+  }
+}
+
 async function registerPrompt(ctx: Plugin.Context, mem0: Mem0Tools) {
   return ctx.session.hook('prompt', async (event) => {
-    if (event.metadata !== undefined) {
-      delete event.metadata[MEMORY_METADATA_KEY]
+    await persistMemorySnapshot(ctx, mem0, event).catch(() => undefined)
+  })
+}
+
+function memorySnapshot(message: ContextMessage): string | undefined {
+  if (message.role !== 'user') {
+    return undefined
+  }
+
+  const value = message.metadata?.[MEMORY_METADATA_KEY]
+  return typeof value === 'string' ? value : undefined
+}
+
+function withMemorySnapshots(messages: readonly ContextMessage[]): ContextMessage[] {
+  return messages.flatMap((message) => {
+    const memory = memorySnapshot(message)
+    if (memory === undefined) {
+      return [message]
     }
 
-    const query = event.prompt.text.trim()
-    if (query === '') {
-      return
-    }
-
-    try {
-      const session = await ctx.session.get({ sessionID: event.sessionID })
-      const memories = await mem0.search(session, query, RETRIEVAL_LIMIT)
-      if (memories.length === 0) {
-        return
+    return [
+      message,
+      {
+        role: 'system',
+        content: [{ type: 'text', text: memory }]
       }
-
-      event.metadata = {
-        ...event.metadata,
-        [MEMORY_METADATA_KEY]: [
-          '<project_memory>',
-          'This complete snapshot supersedes earlier project-memory snapshots.',
-          ...memories.map((memory) => `- ${memory.memory}`),
-          '</project_memory>'
-        ].join('\n')
-      }
-    } catch {
-      return
-    }
+    ]
   })
 }
 
 async function registerContext(ctx: Plugin.Context) {
   return ctx.session.hook('context', (event) => {
     event.system.push({ type: 'text', text: MEMORY_POLICY })
-
-    const messages: ContextMessage[] = []
-    for (const message of event.messages) {
-      messages.push(message)
-      if (message.role !== 'user') {
-        continue
-      }
-
-      const memory = message.metadata?.[MEMORY_METADATA_KEY]
-      if (typeof memory !== 'string') {
-        continue
-      }
-
-      messages.push({
-        role: 'system',
-        content: [{ type: 'text', text: memory }]
-      } as ContextMessage)
-    }
-
-    event.messages.splice(0, event.messages.length, ...messages)
+    event.messages.splice(0, event.messages.length, ...withMemorySnapshots(event.messages))
   })
 }
 
