@@ -72,7 +72,9 @@ function permittedCall(
   return permittedCalls.get(source.id)
 }
 
-function withoutMemoryMetadata(\n  metadata: Record<string, unknown> | undefined\n): Record<string, unknown> {
+function withoutMemoryMetadata(
+  metadata: Record<string, unknown> | undefined
+): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(metadata ?? {}).filter(([key]) => key !== MEMORY_METADATA_KEY)
   )
