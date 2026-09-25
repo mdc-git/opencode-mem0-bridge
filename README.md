@@ -44,15 +44,15 @@ model is `qwen3-embedding:0.6b`.
 ### 2. Configure OpenCode
 
 Add the plugin and local MCP server to
-`$HOME/.config/opencode/opencode.jsonc`. Replace `<MEM0_ROOT>` with the absolute
-path to the Mem0 checkout:
+`$HOME/.config/opencode/opencode.jsonc`. The plugin source is pinned to Git tag
+`0.0.1`. Replace `<MEM0_ROOT>` with the absolute path to the Mem0 checkout:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git"
+      "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git#0.0.1"
     }
   ],
   "mcp": {
@@ -119,7 +119,7 @@ form and choose a model available through your OpenCode provider:
 {
   "plugins": [
     {
-      "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git",
+      "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git#0.0.1",
       "options": {
         "automaticExtraction": true,
         "extractionModel": "provider/model#variant"
