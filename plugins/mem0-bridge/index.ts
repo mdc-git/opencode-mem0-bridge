@@ -17,6 +17,13 @@ const MEMORY_POLICY = [
   'For repository or technical claims that affect implementation correctness, verify against the current repository when practical.',
   'For contextual facts that cannot be independently verified, such as user preferences or prior user-provided information, use the memory unless current evidence contradicts it.'
 ].join('\n')
+const CODEMODE_GUIDANCE = [
+  "Call Mem0 tools only through Code Mode's `execute` tool, using the exact `tools.mem0.*` paths in the Code Mode catalog.",
+  'The `execute` code is JavaScript. For example, use `return await tools.mem0.get_memories({ limit: 1 });` or `return await tools.mem0.search_memories({ query: "..." });`.',
+  'Do not use Python `print` or call `mem0.*` as a top-level tool.',
+  'Report a Mem0 call as successful only when the `execute` result confirms it completed.'
+].join('\n')
+const OLLAMA_SYSTEM_POLICY = [MEMORY_POLICY, CODEMODE_GUIDANCE].join('\n\n')
 const SKILL_PATH = resolve(import.meta.dirname, 'project-memory.md')
 
 type ContextMessage = SessionContext['messages'][number]
@@ -147,7 +154,13 @@ function withMemorySnapshots(messages: readonly ContextMessage[]): ContextMessag
 
 async function registerContext(ctx: Plugin.Context) {
   return ctx.session.hook('context', (event) => {
-    event.system.push({ type: 'text', text: MEMORY_POLICY })
+    if (event.messages.every((message) => message.role !== 'assistant')) {
+      event.system.push({
+        type: 'text',
+        text: event.model.providerID === 'ollama' ? OLLAMA_SYSTEM_POLICY : MEMORY_POLICY
+      })
+    }
+
     event.messages.splice(0, event.messages.length, ...withMemorySnapshots(event.messages))
   })
 }

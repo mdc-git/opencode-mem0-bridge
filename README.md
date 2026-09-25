@@ -14,6 +14,7 @@ OpenCode execution.
 
 - Retrieves up to three relevant memories for each latest user message; repeated context-hook calls for that same message use the session cache.
 - Adds retrieved memories as transient chronological system context immediately after the user message that triggered retrieval, using `<project_memory>` reference material.
+- Adds the project-memory policy once on a session's initial context and includes Mem0 Code Mode guidance there for Ollama.
 - Registers the `project-memory` skill with OpenCode.
 - Optionally reconciles durable memories after successful, failed, or user-interrupted executions.
 
