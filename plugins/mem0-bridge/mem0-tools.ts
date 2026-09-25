@@ -128,7 +128,8 @@ export class Mem0Tools {
   async search(session: Session, query: string, limit: number): Promise<MemorySearchResult[]> {
     const result = await this.execute(session, 'search_memories', {
       query,
-      limit
+      limit,
+      threshold: 0.5
     })
     return searchResults(result)
   }
