@@ -154,13 +154,10 @@ function withMemorySnapshots(messages: readonly ContextMessage[]): ContextMessag
 
 async function registerContext(ctx: Plugin.Context) {
   return ctx.session.hook('context', (event) => {
-    if (event.messages.every((message) => message.role !== 'assistant')) {
-      event.system.push({
-        type: 'text',
-        text: event.model.providerID === 'ollama' ? OLLAMA_SYSTEM_POLICY : MEMORY_POLICY
-      })
-    }
-
+    event.system.push({
+      type: 'text',
+      text: event.model.providerID === 'ollama' ? OLLAMA_SYSTEM_POLICY : MEMORY_POLICY
+    })
     event.messages.splice(0, event.messages.length, ...withMemorySnapshots(event.messages))
   })
 }

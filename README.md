@@ -12,9 +12,9 @@ OpenCode execution.
 
 ## What it provides
 
-- Retrieves up to three relevant memories for each latest user message; repeated context-hook calls for that same message use the session cache.
-- Adds retrieved memories as transient chronological system context immediately after the user message that triggered retrieval, using `<project_memory>` reference material.
-- Adds the project-memory policy once on a session's initial context and includes Mem0 Code Mode guidance there for Ollama.
+- Retrieves up to three relevant memories once when each user prompt is admitted and stores the exact rendered snapshot in prompt metadata.
+- Reprojects persisted memory snapshots as chronological system context immediately after their originating user messages while those messages remain in active history.
+- Adds the project-memory policy to every model request; Ollama also receives Mem0 Code Mode guidance.
 - Registers the `project-memory` skill with OpenCode.
 - Optionally reconciles durable memories after successful, failed, or user-interrupted executions.
 
@@ -102,11 +102,13 @@ Start a new turn and ask:
 What does project memory say about this repository's development tooling?
 ```
 
-The bridge searches Mem0 and supplies matching results as transient chronological
-system context for that user turn. Repository or technical claims that affect
-implementation correctness should be verified against current project evidence;
-contextual user-provided facts and preferences can be used unless current evidence
-contradicts them.
+The bridge searches Mem0 when the prompt is admitted, stores the exact retrieved
+snapshot with that prompt, and deterministically reprojects it as chronological
+system context while the originating message remains in active history. Normal
+OpenCode compaction eventually removes old snapshots from active context.
+Repository or technical claims that affect implementation correctness should be
+verified against current project evidence; contextual user-provided facts and
+preferences can be used unless current evidence contradicts them.
 
 ## Automatic extraction
 
