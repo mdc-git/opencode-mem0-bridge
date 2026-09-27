@@ -60,7 +60,7 @@ async function registerSkill(ctx: Plugin.Context) {
       id: Skill.ID.make('project-memory'),
       name: Skill.Name.make('Project Memory'),
       description:
-        'Use durable project memory when prior decisions, constraints, conventions, dependencies, environment requirements, or known recurring problems may affect substantial implementation, debugging, architecture, planning, or repository investigation.',
+        'Use for substantial implementation, debugging, architecture, planning, dependency work, or repository investigation to retrieve and apply relevant prior project knowledge, including decisions, constraints, conventions, dependencies, environment requirements, and recurring problems.',
       path: AbsolutePath.make(SKILL_PATH),
       content: skillContent
     })
