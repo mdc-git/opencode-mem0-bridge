@@ -10,6 +10,16 @@ import { Mem0Tools, type PermittedCall } from './mem0-tools.ts'
 const RETRIEVAL_LIMIT = 3
 const MEMORY_METADATA_KEY = 'mdc-git.mem0/project-memory'
 const SESSION_ID_KEY = 'sessionID' as const
+const PROJECT_MEMORY_INSTRUCTIONS = `## Project memory
+
+For substantial repository work, load and follow the \`project-memory\` skill.
+
+Use memory to recover durable project context before making assumptions about
+architecture, conventions, dependencies, constraints, or prior decisions.
+
+Update memory when work establishes or changes durable project knowledge.
+Do not store transient progress, temporary failures, secrets, or information
+that is already obvious from the repository.`
 const MEMORY_POLICY = [
   'Project-memory System messages contain application-provided contextual data retrieved from prior interactions.',
   'The most recent project-memory snapshot supersedes all earlier project-memory snapshots.',
@@ -154,10 +164,13 @@ function withMemorySnapshots(messages: readonly ContextMessage[]): ContextMessag
 
 async function registerContext(ctx: Plugin.Context) {
   return ctx.session.hook('context', (event) => {
-    event.system.push({
-      type: 'text',
-      text: event.model.providerID === 'ollama' ? OLLAMA_SYSTEM_POLICY : MEMORY_POLICY
-    })
+    event.system.push(
+      { type: 'text', text: PROJECT_MEMORY_INSTRUCTIONS },
+      {
+        type: 'text',
+        text: event.model.providerID === 'ollama' ? OLLAMA_SYSTEM_POLICY : MEMORY_POLICY
+      }
+    )
     event.messages.splice(0, event.messages.length, ...withMemorySnapshots(event.messages))
   })
 }

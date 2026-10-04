@@ -23,20 +23,24 @@
     "@opencode/schema": "latest"
   },
   "devDependencies": {
-    "@types/node": "^26.6.2",
-    "dependency-cruiser": "^18.4.0",
-    "eslint": "^10.11.0",
+    "@opencode/cli": "^2.0.22",
+    "@types/node": "^26.6.4",
+    "dependency-cruiser": "^18.5.0",
+    "eslint": "^10.12.0",
     "eslint-config-xo": "^2.0.0",
     "eslint-plugin-boundaries": "^7.2.0",
-    "eslint-plugin-sonarjs": "^4.2.1",
-    "globals": "^17.12.0",
-    "knip": "^6.37.0",
-    "prettier": "^3.9.8",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "globals": "^17.13.0",
+    "knip": "^6.39.0",
+    "prettier": "^3.9.9",
     "typescript": "^6.0.3"
   },
   "overrides": {
     "@opentelemetry/core": "2.8.0"
   },
   "$schema": "https://json.schemastore.org/package.json",
-  "$comment": "The plugin is also available as a local checkout through .opencode/index.ts."
+  "$comment": "The plugin is also available as a local checkout through .opencode/index.ts.",
+  "trustedDependencies": [
+    "@opencode/cli"
+  ]
 }

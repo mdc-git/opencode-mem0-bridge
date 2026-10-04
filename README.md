@@ -14,6 +14,7 @@ OpenCode execution.
 
 - Retrieves up to three relevant memories once when each user prompt is admitted and stores the exact rendered snapshot in prompt metadata.
 - Reprojects persisted memory snapshots as chronological system context immediately after their originating user messages while those messages remain in active history.
+- Adds stable project-memory skill, retrieval, and storage instructions to every agent-loop request.
 - Adds the project-memory policy to every model request; Ollama also receives Mem0 Code Mode guidance.
 - Registers the `project-memory` skill with OpenCode.
 - Optionally reconciles durable memories after successful, failed, or user-interrupted executions.
@@ -109,6 +110,11 @@ The bridge searches Mem0 when the prompt is admitted, stores the exact retrieved
 snapshot with that prompt, and deterministically reprojects it as chronological
 system context while the originating message remains in active history. Normal
 OpenCode compaction eventually removes old snapshots from active context.
+Retrieval and skill-loading guidance is identical on every agent-loop request.
+Stored snapshots keep their chronological position and exact content, so new
+prompts and tool continuations do not rewrite the injected conversation prefix.
+Compaction and changes to models, tools, or plugin instructions can still
+invalidate provider caches.
 Repository or technical claims that affect implementation correctness should be
 verified against current project evidence; contextual user-provided facts and
 preferences can be used unless current evidence contradicts them.
@@ -152,6 +158,7 @@ bun run check
 
 `bun run check` runs formatting, linting, type checking, the checkout-local
 activation test, dependency analysis, the audit, and package validation.
+The activation test uses the project-local OpenCode CLI installed by `bun install`.
 
 Use the repository checkout configuration in `.opencode/opencode.jsonc` when
 testing the local plugin source. The production entry point is

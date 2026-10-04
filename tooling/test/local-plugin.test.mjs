@@ -9,9 +9,11 @@ import process from 'node:process'
 import { createInterface } from 'node:readline'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
+import { fileURLToPath } from 'node:url'
 
 const repository = path.resolve(import.meta.dirname, '../..')
 const localPlugin = path.join(repository, '.opencode')
+const opencode = fileURLToPath(import.meta.resolve('@opencode/cli/bin/opencode.exe'))
 const password = 'mem0-bridge-plugin-test-password'
 const authorization = `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`
 
@@ -80,7 +82,7 @@ function isolatedEnvironment(root) {
 }
 
 function startServer(project, root) {
-  const child = spawn(process.env.OPENCODE_BIN ?? 'opencode', ['serve', '--stdio', '--port', '0'], {
+  const child = spawn(process.env.OPENCODE_BIN ?? opencode, ['serve', '--stdio', '--port', '0'], {
     cwd: project,
     env: isolatedEnvironment(root),
     stdio: ['pipe', 'pipe', 'pipe']
