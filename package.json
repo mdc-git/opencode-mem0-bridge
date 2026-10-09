@@ -36,7 +36,11 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "@opentelemetry/core": "2.8.0"
+    "@opentelemetry/core": "2.8.0",
+    "braces": "npm:@dieub/braces-depth-guard@3.0.3-pn.3",
+    "handlebars": "4.7.10",
+    "katex": "0.18.2",
+    "source-map-js": "1.2.2"
   },
   "$schema": "https://json.schemastore.org/package.json",
   "$comment": "The plugin is also available as a local checkout through .opencode/index.ts.",
