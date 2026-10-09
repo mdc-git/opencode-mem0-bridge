@@ -64,30 +64,21 @@ function evidenceForPart(part: AssistantPart): Evidence[] {
   return []
 }
 
+function userEvidence(message: ContextMessage): Evidence[] {
+  return message.type === 'user' ? evidence('user', message.text) : []
+}
+
+function assistantEvidence(message: ContextMessage): Evidence[] {
+  return message.type === 'assistant'
+    ? message.content.flatMap((part) => evidenceForPart(part))
+    : []
+}
+
 export function buildEvidence(messages: readonly ContextMessage[], idleId: string): Evidence[] {
-  return executionMessages(messages, idleId).flatMap((message) => {
-    switch (message.type) {
-      case 'user': {
-        return evidence('user', message.text)
-      }
-
-      case 'assistant': {
-        return message.content.flatMap((part) => evidenceForPart(part))
-      }
-
-      case 'agent-switched':
-      case 'compaction':
-      case 'idle':
-      case 'location-switched':
-      case 'model-switched':
-      case 'shell':
-      case 'skill':
-      case 'synthetic':
-      case 'system': {
-        return []
-      }
-    }
-  })
+  return executionMessages(messages, idleId).flatMap((message) => [
+    ...userEvidence(message),
+    ...assistantEvidence(message)
+  ])
 }
 
 function formatMemories(memories: readonly MemorySearchResult[]): string {
