@@ -21,9 +21,9 @@ function writeCommandOutput(output) {
   }
 }
 
-function run(command, args, cwd) {
+function run(args, cwd) {
   try {
-    return execFileSync(command, args, { cwd, encoding: 'utf8' })
+    return execFileSync('bun', args, { cwd, encoding: 'utf8' })
   } catch (error) {
     writeCommandOutput(error.stdout)
     writeCommandOutput(error.stderr)
@@ -36,12 +36,12 @@ function resolveGraph(manifest, name) {
 
   try {
     writeFileSync(path.join(cwd, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
-    run('bun', ['install', '--lockfile-only', '--ignore-scripts', '--no-cache'], cwd)
+    run(['install', '--lockfile-only', '--ignore-scripts', '--no-cache'], cwd)
     const source = [
       "const text = await Bun.file('bun.lock').text()",
       'process.stdout.write(JSON.stringify(Bun.JSONC.parse(text)))'
     ].join(';')
-    return JSON.parse(run('bun', ['-e', source], cwd))
+    return JSON.parse(run(['-e', source], cwd))
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
@@ -62,15 +62,8 @@ function bunResolvedVersion(lock, name) {
 }
 
 function nextSpecifier(current, version) {
-  if (current.startsWith('^')) {
-    return `^${version}`
-  }
-
-  if (current.startsWith('~')) {
-    return `~${version}`
-  }
-
-  return version
+  const prefix = /^(?:\^|~)/v.exec(current)?.[0] ?? ''
+  return `${prefix}${version}`
 }
 
 function sectionChanges(manifest, section, upgrade) {

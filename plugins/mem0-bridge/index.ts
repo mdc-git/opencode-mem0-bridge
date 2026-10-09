@@ -71,11 +71,9 @@ function permittedCall(
   permittedCalls: ReadonlyMap<string, PermittedCall>
 ): PermittedCall | undefined {
   const { source } = event
-  if (event.effect !== 'ask' || source?.type !== 'tool') {
-    return undefined
-  }
-
-  return permittedCalls.get(source.id)
+  return event.effect !== 'ask' || source?.type !== 'tool'
+    ? undefined
+    : permittedCalls.get(source.id)
 }
 
 function withoutMemoryMetadata(
@@ -205,7 +203,7 @@ async function installBridge(ctx: Plugin.Context, options: BridgeOptions) {
   }
 }
 
-export default Plugin.define({
+const mem0BridgePlugin = Plugin.define({
   id: 'mdc-git.mem0-bridge',
   async setup(ctx) {
     const options = bridgeOptions(ctx.options)
@@ -223,3 +221,5 @@ export default Plugin.define({
     }
   }
 })
+
+export default mem0BridgePlugin

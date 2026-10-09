@@ -11,11 +11,12 @@ export type BridgeOptions = {
 }
 
 function isStringMap(value: unknown): value is Record<string, string> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return false
-  }
-
-  return Object.entries(value).every(([key, entry]) => key.length > 0 && typeof entry === 'string')
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.entries(value).every(([key, entry]) => key.length > 0 && typeof entry === 'string')
+  )
 }
 
 function validateCommand(value: unknown): asserts value is string[] {
@@ -55,14 +56,12 @@ function modelReference(provider: string, model: string, variant: string | undef
     id: Model.ID.make(model)
   }
 
-  if (variant === undefined) {
-    return reference
-  }
-
-  return {
-    ...reference,
-    variant: Model.VariantID.make(variant)
-  }
+  return variant === undefined
+    ? reference
+    : {
+        ...reference,
+        variant: Model.VariantID.make(variant)
+      }
 }
 
 export function bridgeOptions(value: Readonly<Record<string, unknown>>): BridgeOptions {

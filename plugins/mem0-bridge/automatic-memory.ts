@@ -21,20 +21,12 @@ function truncateForSync(text: string): string {
 
   const window = text.slice(0, MAX_ITEM_CHARS)
   const cut = Math.max(...SENTENCE_ENDS.map((separator) => window.lastIndexOf(separator)))
-  if (cut > MAX_ITEM_CHARS / 3) {
-    return text.slice(0, cut + 1)
-  }
-
-  return window
+  return cut > MAX_ITEM_CHARS / 3 ? text.slice(0, cut + 1) : window
 }
 
 function evidence(kind: Evidence['kind'], text: string): Evidence[] {
   const trimmed = text.trim()
-  if (trimmed === '') {
-    return []
-  }
-
-  return [{ kind, text: truncateForSync(trimmed) }]
+  return trimmed === '' ? [] : [{ kind, text: truncateForSync(trimmed) }]
 }
 
 function executionMessages(
@@ -72,18 +64,21 @@ function evidenceForPart(part: AssistantPart): Evidence[] {
   return []
 }
 
+function userEvidence(message: ContextMessage): Evidence[] {
+  return message.type === 'user' ? evidence('user', message.text) : []
+}
+
+function assistantEvidence(message: ContextMessage): Evidence[] {
+  return message.type === 'assistant'
+    ? message.content.flatMap((part) => evidenceForPart(part))
+    : []
+}
+
 export function buildEvidence(messages: readonly ContextMessage[], idleId: string): Evidence[] {
-  return executionMessages(messages, idleId).flatMap((message) => {
-    if (message.type === 'user') {
-      return evidence('user', message.text)
-    }
-
-    if (message.type === 'assistant') {
-      return message.content.flatMap((part) => evidenceForPart(part))
-    }
-
-    return []
-  })
+  return executionMessages(messages, idleId).flatMap((message) => [
+    ...userEvidence(message),
+    ...assistantEvidence(message)
+  ])
 }
 
 function formatMemories(memories: readonly MemorySearchResult[]): string {
