@@ -6,6 +6,7 @@
     {
       "package": "./",
       "options": {
+        "command": ["/Storage/Development/mem0/run.sh"],
         "automaticExtraction": true,
         "extractionModel": "openai/gpt-5.6-luna#xhigh"
       }

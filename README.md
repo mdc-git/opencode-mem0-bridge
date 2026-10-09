@@ -44,8 +44,8 @@ model is `qwen3-embedding:0.6b`.
 
 ### 2. Configure OpenCode
 
-Add the plugin and local MCP server to
-`$HOME/.config/opencode/opencode.jsonc`. Choose the latest release from the
+Add the plugin to `$HOME/.config/opencode/opencode.jsonc`. The plugin registers
+the local MCP server itself. Choose the latest release from the
 repository's **Releases** section in the right sidebar on GitHub, then replace
 `<release-tag>` in the plugin references below with that release's tag. For
 example, `0.0.1` can be a release tag. Replace `<MEM0_ROOT>` with the absolute
@@ -56,30 +56,35 @@ path to the Mem0 checkout:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git#<release-tag>"
-    }
-  ],
-  "mcp": {
-    "servers": {
-      "mem0": {
-        "type": "local",
+      "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git#<release-tag>",
+      "options": {
         "command": ["<MEM0_ROOT>/run.sh"]
       }
     }
-  }
+  ]
 }
 ```
 
-For GPU execution, add this to the `mem0` server entry:
+For GPU execution, add this to the plugin options:
 
 ```jsonc
-"environment": {
-  "MEM0_PROFILE": "gpu"
+"options": {
+  "command": ["<MEM0_ROOT>/run.sh"],
+  "environment": {
+    "MEM0_PROFILE": "gpu"
+  }
 }
 ```
 
 Use `MEM0_EMBEDDING_MODEL` only when overriding the default. Custom embedding
 models must produce 1024-dimensional vectors for the current local server setup.
+
+The plugin requires a nonempty `command` array and forwards the optional
+`environment` map unchanged to the local server.
+
+The plugin registers the server as `mem0`, and OpenCode manages its lifecycle.
+Setup fails if an MCP entry named `mem0` already exists, including a disabled
+entry. Remove the existing entry before enabling the plugin.
 
 ### 3. Verify the connection
 
@@ -130,6 +135,7 @@ form and choose a model available through your OpenCode provider:
     {
       "package": "opencode-mem0-bridge@git+https://github.com/mdc-git/opencode-mem0-bridge.git#<release-tag>",
       "options": {
+        "command": ["<MEM0_ROOT>/run.sh"],
         "automaticExtraction": true,
         "extractionModel": "provider/model#variant"
       }

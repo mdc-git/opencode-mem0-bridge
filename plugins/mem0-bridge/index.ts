@@ -1,11 +1,19 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { Model, Plugin, Provider, Skill } from '@opencode/plugin'
+import { Plugin, Skill } from '@opencode/plugin'
 import type { PermissionEvaluation } from '@opencode/plugin/promise/permission'
+import type { Registration } from '@opencode/plugin/promise/registration'
 import type { SessionContext, SessionPrompt } from '@opencode/plugin/promise/session'
 import { AbsolutePath } from '@opencode/schema/schema'
 import { automaticMemory } from './automatic-memory-runner.ts'
 import { Mem0Tools, type PermittedCall } from './mem0-tools.ts'
+import {
+  bridgeOptions,
+  isMcpConfigured,
+  MCP_NAME,
+  registerMcp,
+  type BridgeOptions
+} from './mcp-registration.ts'
 
 const RETRIEVAL_LIMIT = 3
 const MEMORY_METADATA_KEY = 'mdc-git.mem0/project-memory'
@@ -38,31 +46,6 @@ const SKILL_PATH = resolve(import.meta.dirname, 'project-memory.md')
 
 type ContextMessage = SessionContext['messages'][number]
 
-function parseModelSelector(value: unknown): Model.Ref | undefined {
-  if (typeof value !== 'string' || value.trim() === '') {
-    return undefined
-  }
-
-  return modelReference(value)
-}
-
-function modelReference(value: string): Model.Ref {
-  const match = /^(?<provider>[^#\/]+)\/(?<model>[^#]+)(?:#(?<variant>.+))?$/sv.exec(value.trim())
-  if (match === null) {
-    throw new Error(`Invalid extractionModel selector: ${value}`)
-  }
-
-  const { provider, model, variant } = match.groups!
-  const providerKey = 'providerID' as const
-  return {
-    [providerKey]: Provider.ID.make(provider),
-    id: Model.ID.make(model),
-    ...(variant !== undefined && {
-      variant: Model.VariantID.make(variant)
-    })
-  }
-}
-
 async function registerSkill(ctx: Plugin.Context) {
   const skillContent = await readFile(SKILL_PATH, 'utf8')
   return ctx.skill.transform((editor) => {
@@ -75,6 +58,12 @@ async function registerSkill(ctx: Plugin.Context) {
       content: skillContent
     })
   })
+}
+
+async function disposeRegistrations(registrations: readonly Registration[]): Promise<void> {
+  await Promise.allSettled(
+    registrations.toReversed().map(async (registration) => registration.dispose())
+  )
 }
 
 function permittedCall(
@@ -175,40 +164,62 @@ async function registerContext(ctx: Plugin.Context) {
   })
 }
 
+async function installBridge(ctx: Plugin.Context, options: BridgeOptions) {
+  const permittedCalls = new Map<string, PermittedCall>()
+  const controller = new AbortController()
+  const registrations: Registration[] = []
+  const track = async (registration: Promise<Registration>): Promise<void> => {
+    registrations.push(await registration)
+  }
+
+  try {
+    await track(registerMcp(ctx, options))
+    await track(registerSkill(ctx))
+    const mem0 = new Mem0Tools(ctx, permittedCalls, controller.signal)
+    await track(
+      ctx.permission.hook('evaluate', (event: PermissionEvaluation) => {
+        const permitted = permittedCall(event, permittedCalls)
+        if (permitted?.sessionId === event.sessionID && permitted.toolId === event.action) {
+          event.effect = 'allow'
+        }
+      })
+    )
+    await track(registerPrompt(ctx, mem0))
+    await track(registerContext(ctx))
+
+    const extractionTask = options.automaticExtraction
+      ? automaticMemory({
+          ctx,
+          mem0,
+          signal: controller.signal,
+          extractionModel: options.extractionModel
+        })
+      : undefined
+
+    return { controller, extractionTask, permittedCalls, registrations }
+  } catch (error) {
+    controller.abort()
+    await disposeRegistrations(registrations)
+    permittedCalls.clear()
+    throw error
+  }
+}
+
 export default Plugin.define({
   id: 'mdc-git.mem0-bridge',
   async setup(ctx) {
-    const skill = await registerSkill(ctx)
-    const extractionModel = parseModelSelector(ctx.options.extractionModel)
-    const permittedCalls = new Map<string, PermittedCall>()
-    const controller = new AbortController()
-    const mem0 = new Mem0Tools(ctx, permittedCalls, controller.signal)
-    const permission = await ctx.permission.hook('evaluate', (event: PermissionEvaluation) => {
-      const permitted = permittedCall(event, permittedCalls)
-      if (permitted?.sessionId === event.sessionID && permitted.toolId === event.action) {
-        event.effect = 'allow'
-      }
-    })
-    const prompt = await registerPrompt(ctx, mem0)
-    const context = await registerContext(ctx)
-    const extractionTask =
-      ctx.options.automaticExtraction === true
-        ? automaticMemory({
-            ctx,
-            mem0,
-            signal: controller.signal,
-            extractionModel
-          })
-        : undefined
+    const options = bridgeOptions(ctx.options)
+    const [servers, isConfigured] = await Promise.all([ctx.mcp.list(), isMcpConfigured(ctx)])
+    if (isConfigured || servers.data.some((server) => server.name === MCP_NAME)) {
+      throw new Error(`mem0-bridge cannot register MCP server ${MCP_NAME}: an entry already exists`)
+    }
 
+    const state = await installBridge(ctx, options)
     return async () => {
-      controller.abort()
-      await extractionTask
-      await context.dispose()
-      await prompt.dispose()
-      await permission.dispose()
-      permittedCalls.clear()
-      await skill.dispose()
+      state.controller.abort()
+      await state.extractionTask?.catch(() => undefined)
+      await disposeRegistrations(state.registrations)
+      state.permittedCalls.clear()
     }
   }
 })

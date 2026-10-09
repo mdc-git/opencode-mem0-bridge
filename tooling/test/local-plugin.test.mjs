@@ -157,7 +157,14 @@ async function exercisePlugin(root, project) {
   await mkdir(path.join(root, 'tmp'), { recursive: true })
   await writeFile(
     path.join(project, 'opencode.jsonc'),
-    `${JSON.stringify({ plugins: [localPlugin] })}\n`
+    `${JSON.stringify({
+      plugins: [
+        {
+          package: localPlugin,
+          options: { command: [process.execPath, '-e', 'process.exit(0)'] }
+        }
+      ]
+    })}\n`
   )
   const running = startServer(project, root)
   try {
