@@ -70,10 +70,20 @@ export function buildEvidence(messages: readonly ContextMessage[], idleId: strin
       case 'user': {
         return evidence('user', message.text)
       }
+
       case 'assistant': {
         return message.content.flatMap((part) => evidenceForPart(part))
       }
-      default: {
+
+      case 'agent-switched':
+      case 'compaction':
+      case 'idle':
+      case 'location-switched':
+      case 'model-switched':
+      case 'shell':
+      case 'skill':
+      case 'synthetic':
+      case 'system': {
         return []
       }
     }
