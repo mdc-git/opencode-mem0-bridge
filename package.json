@@ -23,7 +23,7 @@
     "@opencode/schema": "^2.0.28"
   },
   "devDependencies": {
-    "@opencode/cli": "^2.0.28",
+    "@opencode/cli": "^2.0.29",
     "@types/node": "^26.6.4",
     "dependency-cruiser": "^18.5.0",
     "eslint": "^10.12.0",
