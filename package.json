@@ -20,7 +20,7 @@
   ],
   "dependencies": {
     "@opencode/plugin": "^2.0.29",
-    "@opencode/schema": "^2.0.28"
+    "@opencode/schema": "^2.0.29"
   },
   "devDependencies": {
     "@opencode/cli": "^2.0.29",
