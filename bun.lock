@@ -6,7 +6,7 @@
       "name": "opencode-mem0-bridge",
       "dependencies": {
         "@opencode/plugin": "^2.0.29",
-        "@opencode/schema": "^2.0.28",
+        "@opencode/schema": "^2.0.29",
       },
       "devDependencies": {
         "@opencode/cli": "^2.0.29",
@@ -232,7 +232,7 @@
 
     "@opencode/protocol": ["@opencode/protocol@2.0.29", "", { "dependencies": { "@opencode/schema": "2.0.29", "effect": "4.0.1" } }, "sha512-Eik6a2u2znmWdyPgpxCnMXJXySslG0Yj/XQzmM/Z/3pAxy0nMJnKLaFznnvXPNoPPII14L+CH7kUhBjLtOPGgQ=="],
 
-    "@opencode/schema": ["@opencode/schema@2.0.28", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.1" } }, "sha512-NHl42ngFN6uLCjtmtooYlEGEayng9ZFc+30DAqQuPcvKpMWsO23OqximHlukxtErp209C4f9LW+OJH/6k60+yw=="],
+    "@opencode/schema": ["@opencode/schema@2.0.29", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.1" } }, "sha512-2qSyUGaeItugP3QujZrBhg2f4a4wdL9ab0m0fObHM+hlZ659YmWGzBRNI9qWR7At8AI9gnDCmgnnrQrx5/aprg=="],
 
     "@opencode/util": ["@opencode/util@2.0.29", "", { "dependencies": { "@effect/opentelemetry": "4.0.1", "@effect/platform-node": "4.0.1", "@effect/platform-node-shared": "4.0.1", "@npmcli/arborist": "9.4.0", "@npmcli/config": "10.8.1", "@opentelemetry/api": "1.9.0", "@opentelemetry/api-logs": "0.219.0", "@opentelemetry/context-async-hooks": "2.8.0", "@opentelemetry/exporter-trace-otlp-http": "0.219.0", "@opentelemetry/resources": "2.8.0", "@opentelemetry/sdk-logs": "0.219.0", "@opentelemetry/sdk-metrics": "2.8.0", "@opentelemetry/sdk-trace-base": "2.8.0", "@opentelemetry/sdk-trace-node": "2.8.0", "cross-spawn": "7.0.6", "effect": "4.0.1", "glob": "13.0.5", "mime-types": "3.0.2", "minimatch": "10.2.5", "npm-package-arg": "13.0.2", "open": "11.0.4", "pacote": "21.5.1" } }, "sha512-o0xmrV5MFzB4hhapow4tSbStXAWF27598tDabqq+damJAuvPCBGorDBciosenXpOnNsEHhJm37l5KwOhb1+SNA=="],
 
@@ -1328,13 +1328,9 @@
 
     "@npmcli/run-script/proc-log": ["proc-log@6.1.0", "", {}, "sha512-iG+GYldRf2BQ0UDUAd6JQ/RwzaQy6mXmsk/IzlYyal4A4SNFw54MeH4/tLkF4I5WoWG9SQwuqWzS99jaFQHBuQ=="],
 
-    "@opencode/ai/@opencode/schema": ["@opencode/schema@2.0.29", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.1" } }, "sha512-2qSyUGaeItugP3QujZrBhg2f4a4wdL9ab0m0fObHM+hlZ659YmWGzBRNI9qWR7At8AI9gnDCmgnnrQrx5/aprg=="],
 
-    "@opencode/client/@opencode/schema": ["@opencode/schema@2.0.29", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.1" } }, "sha512-2qSyUGaeItugP3QujZrBhg2f4a4wdL9ab0m0fObHM+hlZ659YmWGzBRNI9qWR7At8AI9gnDCmgnnrQrx5/aprg=="],
 
-    "@opencode/plugin/@opencode/schema": ["@opencode/schema@2.0.29", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.1" } }, "sha512-2qSyUGaeItugP3QujZrBhg2f4a4wdL9ab0m0fObHM+hlZ659YmWGzBRNI9qWR7At8AI9gnDCmgnnrQrx5/aprg=="],
 
-    "@opencode/protocol/@opencode/schema": ["@opencode/schema@2.0.29", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.1" } }, "sha512-2qSyUGaeItugP3QujZrBhg2f4a4wdL9ab0m0fObHM+hlZ659YmWGzBRNI9qWR7At8AI9gnDCmgnnrQrx5/aprg=="],
 
     "@opencode/util/minimatch": ["minimatch@10.2.5", "", { "dependencies": { "brace-expansion": "^5.0.5" } }, "sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg=="],
 
