@@ -71,9 +71,9 @@ function permittedCall(
   permittedCalls: ReadonlyMap<string, PermittedCall>
 ): PermittedCall | undefined {
   const { source } = event
-  return event.effect !== 'ask' || source?.type !== 'tool'
-    ? undefined
-    : permittedCalls.get(source.id)
+  return event.effect === 'ask' && source?.type === 'tool'
+    ? permittedCalls.get(source.id)
+    : undefined
 }
 
 function withoutMemoryMetadata(

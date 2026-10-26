@@ -20,11 +20,11 @@ function isStringMap(value: unknown): value is Record<string, string> {
 }
 
 function validateCommand(value: unknown): asserts value is string[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new TypeError('mem0-bridge command must be a nonempty array of nonempty strings')
-  }
-
-  if (value.some((part) => typeof part !== 'string' || part.length === 0)) {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((part) => typeof part !== 'string' || part.length === 0)
+  ) {
     throw new TypeError('mem0-bridge command must be a nonempty array of nonempty strings')
   }
 }
