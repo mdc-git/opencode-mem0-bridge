@@ -94,8 +94,9 @@ From the project you want to use with memory, check the MCP connection:
 opencode mcp list
 ```
 
-The `mem0` entry should report `connected`. Each OpenCode working directory has
-its own Mem0 memory scope.
+The `mem0` entry should report `connected`. Memories are scoped per call to the
+repository or folder specified by `project`; reads accept `projects` and default
+to the server startup directory.
 
 ## Quick start
 

@@ -2,6 +2,10 @@
 
 Use the local `mem0` MCP tools as durable engineering memory.
 
+## Scope
+
+Memories are scoped to the repository or folder they are about, not to the session directory. When adding a memory, pass `project`: a path inside that repository (any file or directory you worked on there works). Use the workspace directory only for facts that span several repositories or concern the environment itself. Pass `projects` to `search_memories` or `get_memories` to read other repositories; the default is the session directory.
+
 ## Retrieval
 
 Before substantial implementation, debugging, architecture, planning,

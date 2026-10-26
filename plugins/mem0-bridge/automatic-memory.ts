@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import type { Plugin } from '@opencode/plugin'
 import type { MemorySearchResult } from './mem0-tools.ts'
 
@@ -29,7 +30,7 @@ function evidence(kind: Evidence['kind'], text: string): Evidence[] {
   return trimmed === '' ? [] : [{ kind, text: truncateForSync(trimmed) }]
 }
 
-function executionMessages(
+export function executionMessages(
   messages: readonly ContextMessage[],
   idleId: string
 ): readonly ContextMessage[] {
@@ -44,6 +45,32 @@ function executionMessages(
     (message, index) => index < currentIdleIndex && message.type === 'idle'
   )
   return messages.slice(previousIdleIndex + 1, currentIdleIndex)
+}
+
+function partPaths(part: AssistantPart, directory: string): string[] {
+  if (part.type !== 'tool' || part.state.input === null || typeof part.state.input !== 'object') {
+    return []
+  }
+
+  const input = part.state.input as Record<string, unknown>
+  return ['path', 'file_path', 'filePath', 'notebook_path']
+    .map((key) => input[key])
+    .filter((value): value is string => typeof value === 'string' && value !== '')
+    .map((path) => resolve(directory, path))
+}
+
+export function touchedPaths(messages: readonly ContextMessage[], directory: string): string[] {
+  return [
+    ...new Set(
+      messages
+        .toReversed()
+        .flatMap((message) =>
+          message.type === 'assistant'
+            ? message.content.toReversed().flatMap((part) => partPaths(part, directory))
+            : []
+        )
+    )
+  ]
 }
 
 function evidenceForPart(part: AssistantPart): Evidence[] {
@@ -90,6 +117,7 @@ function formatMemories(memories: readonly MemorySearchResult[]): string {
     .map((memory) =>
       [
         `id: ${memory.id}`,
+        `project: ${memory.project}`,
         `text: ${memory.memory}`,
         ...(memory.score === undefined ? [] : [`score: ${memory.score}`])
       ].join('\n')
@@ -100,7 +128,8 @@ function formatMemories(memories: readonly MemorySearchResult[]): string {
 export function buildExtractionPrompt(
   items: readonly Evidence[],
   memories: readonly MemorySearchResult[],
-  outcome: TerminalOutcome
+  outcome: TerminalOutcome,
+  candidates: readonly string[]
 ): string {
   const evidenceText = items.map((item) => `${item.kind.toUpperCase()}: ${item.text}`).join('\n\n')
 
@@ -125,9 +154,13 @@ export function buildExtractionPrompt(
     'Existing memory candidates:',
     formatMemories(memories),
     '',
+    'Project candidates:',
+    ...candidates,
+    'Each add must use a project exactly equal to one listed candidate: a path inside the repository the fact is about. Use the session directory only for workspace facts or facts spanning several repositories. If unsure which candidate applies, omit the fact.',
+    '',
     'Return only a JSON array.',
     'Each item must be exactly one of:',
-    '{"action":"add","text":"..."}',
+    '{"action":"add","project":"<candidate>","text":"..."}',
     '{"action":"update","memoryID":"existing-id","text":"..."}',
     'Return [] when no change is needed.',
     'Do not return none or delete operations, Markdown, explanations, or additional keys.'

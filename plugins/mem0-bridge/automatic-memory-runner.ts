@@ -1,7 +1,13 @@
 import type { Model, Plugin } from '@opencode/plugin'
 import { Event, SessionMessage } from '@opencode/schema'
 import type { Mem0Tools } from './mem0-tools.ts'
-import { buildEvidence, buildExtractionPrompt, type TerminalOutcome } from './automatic-memory.ts'
+import {
+  buildEvidence,
+  buildExtractionPrompt,
+  executionMessages,
+  touchedPaths,
+  type TerminalOutcome
+} from './automatic-memory.ts'
 import { parseOperations } from './memory-operations.ts'
 
 const EXTRACTION_LIMIT = 10
@@ -83,8 +89,13 @@ async function processLocalExecution(
     return
   }
 
-  const memories = await mem0.search(session, searchQuery, EXTRACTION_LIMIT)
-  const prompt = buildExtractionPrompt(items, memories, execution.outcome)
+  const paths = touchedPaths(
+    executionMessages(messages, execution.idleId),
+    session.location.directory
+  ).slice(0, 10)
+  const candidates = [...new Set([session.location.directory, ...paths])].slice(0, 10)
+  const memories = await mem0.search(session, searchQuery, EXTRACTION_LIMIT, candidates)
+  const prompt = buildExtractionPrompt(items, memories, execution.outcome, candidates)
   const model = options.extractionModel ?? session.model
   const generated = await ctx.generate.text(
     {
@@ -94,7 +105,7 @@ async function processLocalExecution(
     { signal }
   )
   const memoryIds = new Set(memories.map((memory) => memory.id))
-  await mem0.write(session, parseOperations(generated.text, memoryIds))
+  await mem0.write(session, parseOperations(generated.text, memoryIds, new Set(candidates)), paths)
 }
 
 function enqueueExecution(

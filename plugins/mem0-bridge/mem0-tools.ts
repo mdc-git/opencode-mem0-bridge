@@ -27,6 +27,7 @@ type RegisteredTool = Awaited<ReturnType<Plugin.Context['tool']['list']>>[number
 export type MemorySearchResult = {
   id: string
   memory: string
+  project: string
   score?: number
 }
 
@@ -34,8 +35,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object'
 }
 
-function hasSearchFields(value: unknown): value is { id: string; memory: string; score?: unknown } {
-  return isRecord(value) && typeof value.id === 'string' && typeof value.memory === 'string'
+function hasSearchFields(
+  value: unknown
+): value is { id: string; memory: string; project: string; score?: unknown } {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.memory === 'string' &&
+    typeof value.project === 'string'
+  )
 }
 
 function searchResults(value: unknown): MemorySearchResult[] {
@@ -51,6 +59,7 @@ function searchResults(value: unknown): MemorySearchResult[] {
   return results.filter(hasSearchFields).map((result) => ({
     id: result.id,
     memory: result.memory,
+    project: result.project,
     ...(typeof result.score === 'number' && { score: result.score })
   }))
 }
@@ -125,22 +134,36 @@ export class Mem0Tools {
     return this.tool(id, deadline)
   }
 
-  async search(session: Session, query: string, limit: number): Promise<MemorySearchResult[]> {
+  async search(
+    session: Session,
+    query: string,
+    limit: number,
+    projects: readonly string[]
+  ): Promise<MemorySearchResult[]> {
     const result = await this.execute(session, 'search_memories', {
       query,
+      projects,
       limit,
       threshold: 0.5
     })
     return searchResults(result)
   }
 
-  async write(session: Session, operations: readonly MemoryOperation[]): Promise<void> {
+  async write(
+    session: Session,
+    operations: readonly MemoryOperation[],
+    paths: readonly string[]
+  ): Promise<void> {
     let pending: Promise<unknown> = Promise.resolve()
     for (const operation of operations) {
       pending = pending.then(async () =>
         this.execute(session, `${operation.action}_memory`, {
           ...(operation.action === 'update' && {
             [memoryIdKey]: operation.memoryId
+          }),
+          ...(operation.action === 'add' && {
+            project: operation.project,
+            metadata: { origin: 'auto', paths }
           }),
           text: operation.text
         })

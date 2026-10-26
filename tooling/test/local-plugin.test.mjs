@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -186,4 +186,80 @@ test('checkout-local server plugin activates from .opencode', async () => {
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+const scopeTestScript = String.raw`
+    import assert from 'node:assert/strict'
+    import plugin from './plugins/mem0-bridge/index.ts'
+    import { touchedPaths, buildExtractionPrompt } from './plugins/mem0-bridge/automatic-memory.ts'
+    import { parseOperations } from './plugins/mem0-bridge/memory-operations.ts'
+    import { Mem0Tools } from './plugins/mem0-bridge/mem0-tools.ts'
+
+    const tool = (input) => ({ type: 'tool', state: { input } })
+    const messages = [
+      { type: 'assistant', content: [tool({ path: 'old/file' }), tool({ file_path: '/other/edit' })] },
+      { type: 'assistant', content: [tool({ filePath: 'old/file' }), tool({ notebook_path: 'book' }), tool({ command: 'cat /ignored' })] }
+    ]
+    const paths = ['/workspace/book', '/workspace/old/file', '/other/edit']
+    assert.deepEqual(touchedPaths(messages, '/workspace'), paths)
+    const candidates = ['/workspace', ...paths]
+    const ids = new Set(['known'])
+    const add = { action: 'add', project: paths[0], text: 'fact' }
+    const update = { action: 'update', memoryID: 'known', text: 'updated' }
+    const operations = parseOperations(JSON.stringify([add, update]), ids, new Set(candidates))
+    assert.deepEqual(operations, [add, { action: 'update', memoryId: 'known', text: 'updated' }])
+    assert.throws(() => parseOperations(JSON.stringify([{ ...add, project: '/unknown' }]), ids, new Set(candidates)))
+    assert.throws(() => parseOperations(JSON.stringify([{ action: 'add', text: 'fact' }]), ids, new Set(candidates)))
+    const extractionPrompt = buildExtractionPrompt([], [{ id: 'known', memory: 'remember', project: '/resolved' }], 'succeeded', candidates)
+    assert.ok(extractionPrompt.includes(paths[0]))
+    assert.ok(extractionPrompt.includes('project: /resolved'))
+    assert.ok(extractionPrompt.includes('"project":"<candidate>"'))
+
+    const calls = []
+    const registration = { dispose: async () => {} }
+    const hooks = {}
+    const ctx = {
+      options: { command: ['mem0'] },
+      mcp: {
+        list: async () => ({ data: [] }),
+        transform: async (fn) => { fn({ list: () => [], set: () => {} }); return registration }
+      },
+      skill: { transform: async (fn) => { fn({ add: () => {} }); return registration } },
+      permission: { hook: async () => registration },
+      session: {
+        get: async () => ({ id: 'session', agent: 'agent', location: { directory: '/workspace' } }),
+        context: async () => messages,
+        hook: async (name, fn) => { hooks[name] = fn; return registration }
+      },
+      tool: { list: async () => ['search_memories', 'add_memory', 'update_memory'].map((name) => ({
+        id: 'mem0_' + name,
+        execute: async (input) => {
+          calls.push({ name, input })
+          return { output: { results: [{ id: 'known', memory: 'remember', project: '/resolved' }] } }
+        }
+      })) }
+    }
+    const dispose = await plugin.setup(ctx)
+    const event = { sessionID: 'session', prompt: { text: ' question ' }, metadata: {} }
+    await hooks.prompt(event)
+    assert.deepEqual(calls[0], { name: 'search_memories', input: { query: 'question', projects: candidates, limit: 3, threshold: 0.5 } })
+    assert.equal(event.metadata['mdc-git.mem0/project-memory'], [
+      '<project_memory>',
+      'This complete snapshot supersedes earlier project-memory snapshots.',
+      'Projects searched: ' + candidates.join(', '),
+      '- [/resolved] remember',
+      '</project_memory>'
+    ].join('\n'))
+    const mem0 = new Mem0Tools(ctx, new Map(), new AbortController().signal)
+    await mem0.write({ id: 'session', agent: 'agent' }, operations, paths)
+    assert.deepEqual(calls.slice(1), [
+      { name: 'add_memory', input: { project: paths[0], metadata: { origin: 'auto', paths }, text: 'fact' } },
+      { name: 'update_memory', input: { memory_id: 'known', text: 'updated' } }
+    ])
+    await dispose()
+`
+
+test('repository paths scope retrieval, extraction, and writes', () => {
+  const output = execFileSync('bun', ['--eval', scopeTestScript], { cwd: repository })
+  assert.equal(output.toString(), '')
 })
