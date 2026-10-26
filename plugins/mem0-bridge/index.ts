@@ -17,6 +17,7 @@ import {
 } from './mcp-registration.ts'
 
 const RETRIEVAL_LIMIT = 3
+const MAX_PROJECT_PATHS = 10
 const MEMORY_METADATA_KEY = 'mdc-git.mem0/project-memory'
 const SESSION_ID_KEY = 'sessionID' as const
 const PROJECT_MEMORY_INSTRUCTIONS = `## Project memory
@@ -122,7 +123,7 @@ async function persistMemorySnapshot(
     session.location.directory,
     ...touchedPaths(messages, session.location.directory)
       .filter((path) => path !== session.location.directory)
-      .slice(0, 4)
+      .slice(0, MAX_PROJECT_PATHS)
   ]
   const snapshot = renderMemorySnapshot(
     await mem0.search(session, query, RETRIEVAL_LIMIT, projects),
