@@ -195,12 +195,12 @@ const scopeTestScript = String.raw`
     import { parseOperations } from './plugins/mem0-bridge/memory-operations.ts'
     import { Mem0Tools } from './plugins/mem0-bridge/mem0-tools.ts'
 
-    const tool = (input) => ({ type: 'tool', state: { input } })
+    const tool = (name, input) => ({ type: 'tool', name, state: { input } })
     const messages = [
-      { type: 'assistant', content: [tool({ path: 'old/file' }), tool({ file_path: '/other/edit' })] },
-      { type: 'assistant', content: [tool({ filePath: 'old/file' }), tool({ notebook_path: 'book' }), tool({ command: 'cat /ignored' })] }
+      { type: 'assistant', content: [tool('read', { path: 'old/file' }), tool('Edit', { file_path: '/other/edit' })] },
+      { type: 'assistant', content: [tool('read', { filePath: 'old/file' }), tool('NotebookEdit', { notebook_path: 'book' }), tool('grep', { path: 'search' }), tool('shell', { path: '/ignored' }), tool('llm_wiki.read', { path: 'wiki/projects/x/overview.md' })] }
     ]
-    const paths = ['/workspace/book', '/workspace/old/file', '/other/edit']
+    const paths = ['/workspace/search', '/workspace/book', '/workspace/old/file', '/other/edit']
     assert.deepEqual(touchedPaths(messages, '/workspace'), paths)
     const candidates = ['/workspace', ...paths]
     const ids = new Set(['known'])
@@ -260,6 +260,8 @@ const scopeTestScript = String.raw`
 `
 
 test('repository paths scope retrieval, extraction, and writes', () => {
-  const output = execFileSync('bun', ['--eval', scopeTestScript], { cwd: repository })
+  const output = execFileSync('bun', ['--eval', scopeTestScript], {
+    cwd: repository
+  })
   assert.equal(output.toString(), '')
 })

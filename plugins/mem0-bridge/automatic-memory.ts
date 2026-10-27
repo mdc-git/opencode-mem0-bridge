@@ -4,6 +4,17 @@ import type { MemorySearchResult } from './mem0-tools.ts'
 
 const MAX_ITEM_CHARS = 450
 const SENTENCE_ENDS = ['。', '！', '？', '.', '!', '?']
+const FILE_TOOLS = new Set([
+  'read',
+  'write',
+  'edit',
+  'multiedit',
+  'notebookedit',
+  'glob',
+  'grep',
+  'list',
+  'ls'
+])
 
 type ContextMessage = Awaited<ReturnType<Plugin.Context['session']['context']>>[number]
 type AssistantPart = Extract<ContextMessage, { type: 'assistant' }>['content'][number]
@@ -47,8 +58,8 @@ export function executionMessages(
   return messages.slice(previousIdleIndex + 1, currentIdleIndex)
 }
 
-function partPaths(part: AssistantPart, directory: string): string[] {
-  if (part.type !== 'tool' || part.state.input === null || typeof part.state.input !== 'object') {
+function partPaths(part: Extract<AssistantPart, { type: 'tool' }>, directory: string): string[] {
+  if (part.state.input === null || typeof part.state.input !== 'object') {
     return []
   }
 
@@ -66,7 +77,13 @@ export function touchedPaths(messages: readonly ContextMessage[], directory: str
         .toReversed()
         .flatMap((message) =>
           message.type === 'assistant'
-            ? message.content.toReversed().flatMap((part) => partPaths(part, directory))
+            ? message.content
+                .toReversed()
+                .flatMap((part) =>
+                  part.type === 'tool' && FILE_TOOLS.has(part.name.toLowerCase())
+                    ? partPaths(part, directory)
+                    : []
+                )
             : []
         )
     )

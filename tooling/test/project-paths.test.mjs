@@ -53,7 +53,9 @@ const pathCapTestScript = `
       { type: 'idle', id: 'msg_previous', outcome: 'succeeded' },
       { type: 'user', text: 'remember these repositories' },
       { type: 'assistant', content: [{ type: 'text', text: 'done' }, ...files(0, 6).map(tool)] },
-      { type: 'assistant', content: files(6, 12).map(tool) },
+      { type: 'assistant', content: [...files(6, 12).map(tool),
+        { type: 'tool', name: 'llm_wiki.read', state: { input: { path: 'wiki/projects/x/overview.md' } } },
+        { type: 'tool', name: 'bash', state: { input: { path: '/ignored' } } }] },
       { type: 'idle', id: SessionMessage.ID.fromEvent(eventId), outcome: 'succeeded' }
     ]
     const turnPaths = files(0, 12).toReversed().slice(0, 10)
@@ -79,6 +81,8 @@ const pathCapTestScript = `
 `
 
 test('retrieval and extraction cap and order their project candidates', () => {
-  const output = execFileSync('bun', ['--eval', pathCapTestScript], { cwd: repository })
+  const output = execFileSync('bun', ['--eval', pathCapTestScript], {
+    cwd: repository
+  })
   assert.equal(output.toString(), '')
 })
