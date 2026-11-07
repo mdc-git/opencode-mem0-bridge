@@ -1,11 +1,17 @@
+import { execFile } from 'node:child_process'
+import process from 'node:process'
 import { Model, Provider, type Plugin } from '@opencode/plugin'
 import type { Registration } from '@opencode/plugin/promise/registration'
 
 export const MCP_NAME = 'mem0'
 
+type LocalConnection = { type: 'local'; command: string[]; environment?: Record<string, string> }
+
+type BridgeConnection = LocalConnection | { type: 'remote'; url: string; oauth: false }
+
 export type BridgeOptions = {
-  command: string[]
-  environment?: Record<string, string>
+  connection: BridgeConnection
+  startup?: LocalConnection
   automaticExtraction: boolean
   extractionModel?: Model.Ref
 }
@@ -64,15 +70,48 @@ function modelReference(provider: string, model: string, variant: string | undef
       }
 }
 
-export function bridgeOptions(value: Readonly<Record<string, unknown>>): BridgeOptions {
+function remoteConnection(value: Readonly<Record<string, unknown>>): BridgeConnection {
+  if (typeof value.url !== 'string') {
+    throw new TypeError('mem0-bridge url must be an absolute HTTP or HTTPS URL')
+  }
+
+  const url = new URL(value.url)
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new TypeError('mem0-bridge url must use HTTP or HTTPS')
+  }
+
+  return { type: 'remote', url: url.href, oauth: false }
+}
+
+function localConnection(value: Readonly<Record<string, unknown>>): LocalConnection {
   validateCommand(value.command)
   validateEnvironment(value.environment)
 
+  return {
+    type: 'local',
+    command: [...value.command],
+    ...(value.environment !== undefined && { environment: { ...value.environment } })
+  }
+}
+
+function connectionOptions(
+  value: Readonly<Record<string, unknown>>
+): Pick<BridgeOptions, 'connection' | 'startup'> {
+  if (value.url === undefined) {
+    return { connection: localConnection(value) }
+  }
+
+  const connection = remoteConnection(value)
+  return value.command === undefined
+    ? { connection }
+    : { connection, startup: localConnection(value) }
+}
+
+export function bridgeOptions(value: Readonly<Record<string, unknown>>): BridgeOptions {
   const extractionModel = parseModelSelector(value.extractionModel)
 
   return {
-    command: [...value.command],
-    ...(value.environment !== undefined && { environment: { ...value.environment } }),
+    ...connectionOptions(value),
     automaticExtraction: value.automaticExtraction === true,
     ...(extractionModel !== undefined && { extractionModel })
   }
@@ -91,11 +130,27 @@ export async function registerMcp(
   ctx: Plugin.Context,
   options: BridgeOptions
 ): Promise<Registration> {
+  if (options.startup !== undefined) {
+    const [command, ...args] = options.startup.command
+    const execution = {
+      cwd: ctx.location.directory,
+      env: { ...process.env, ...options.startup.environment },
+      timeout: 120_000
+    }
+    await new Promise<void>((resolve, reject) => {
+      execFile(command, args, execution, (error) => {
+        if (error) {
+          reject(new Error(`Mem0 HTTP startup failed: ${error.message}`, { cause: error }))
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
+
   return ctx.mcp.transform((editor) => {
     editor.set(MCP_NAME, {
-      type: 'local',
-      command: options.command,
-      ...(options.environment !== undefined && { environment: options.environment }),
+      ...options.connection,
       protocol: '2026-07-28',
       timeout: { startup: 120_000 }
     })

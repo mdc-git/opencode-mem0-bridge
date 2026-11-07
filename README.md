@@ -79,10 +79,35 @@ For GPU execution, add this to the plugin options:
 Use `MEM0_EMBEDDING_MODEL` only when overriding the default. Custom embedding
 models must produce 1024-dimensional vectors for the current local server setup.
 
-The plugin requires a nonempty `command` array and forwards the optional
-`environment` map unchanged to the local server.
+For stdio, the plugin requires a nonempty `command` array and forwards the
+optional `environment` map unchanged to the local server. Do not select an HTTP
+transport in that environment; use the URL configuration below instead.
 
-The plugin registers the server as `mem0`, and OpenCode manages its lifecycle.
+For Streamable HTTP with automatic startup, configure both the endpoint and the
+Mem0 HTTP launcher:
+
+```jsonc
+"options": {
+  "url": "http://127.0.0.1:8081/mcp",
+  "command": ["bash", "<MEM0_ROOT>/scripts/http-local.sh"]
+}
+```
+
+With `url`, the bridge runs `command` as a startup command and waits for it to
+exit successfully before registering the HTTP connection. The launcher starts
+or reuses one shared Mem0 HTTP process, serializes concurrent startup with a file
+lock, and waits for MCP discovery to succeed. Logs and the PID are under
+`<MEM0_ROOT>/data/http-8081/`. The server stays running across OpenCode reloads
+so forwarded clients are not disconnected.
+
+VPS OpenCode connects directly to this loopback endpoint. A local client can
+connect to the same server through an SSH port forward. HTTP connections use
+protocol `2026-07-28` without OAuth; keep the unauthenticated endpoint on loopback.
+For an already managed HTTP server, omit `command`. Set `MEM0_HTTP_PORT` in the
+startup `environment` and update `url` together when changing the port.
+
+The plugin registers the server as `mem0`. OpenCode manages the connection and,
+for command-based stdio servers, the child process.
 Setup fails if an MCP entry named `mem0` already exists, including a disabled
 entry. Remove the existing entry before enabling the plugin.
 
