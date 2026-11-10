@@ -140,18 +140,35 @@ async function registerPrompt(ctx: Plugin.Context, mem0: Mem0Tools) {
   })
 }
 
-function memorySnapshot(message: ContextMessage): string | undefined {
-  if (message.role !== 'user') {
+type StoredMessage = Awaited<ReturnType<Plugin.Context['session']['context']>>[number]
+
+function memorySnapshot(message: StoredMessage): readonly [string, string] | undefined {
+  if (message.type !== 'user') {
     return undefined
   }
 
   const value = message.metadata?.[MEMORY_METADATA_KEY]
-  return typeof value === 'string' ? value : undefined
+  return typeof value === 'string' ? [message.id, value] : undefined
 }
 
-function withMemorySnapshots(messages: readonly ContextMessage[]): ContextMessage[] {
+function memorySnapshots(messages: readonly StoredMessage[]): Map<string, string> {
+  const snapshots = new Map<string, string>()
+  for (const message of messages) {
+    const snapshot = memorySnapshot(message)
+    if (snapshot !== undefined) {
+      snapshots.set(snapshot[0], snapshot[1])
+    }
+  }
+
+  return snapshots
+}
+
+function withMemorySnapshots(
+  messages: readonly ContextMessage[],
+  snapshots: ReadonlyMap<string, string>
+): ContextMessage[] {
   return messages.flatMap((message) => {
-    const memory = memorySnapshot(message)
+    const memory = message.id === undefined ? undefined : snapshots.get(message.id)
     if (memory === undefined) {
       return [message]
     }
@@ -167,7 +184,7 @@ function withMemorySnapshots(messages: readonly ContextMessage[]): ContextMessag
 }
 
 async function registerContext(ctx: Plugin.Context) {
-  return ctx.session.hook('context', (event) => {
+  return ctx.session.hook('context', async (event) => {
     event.system.push(
       { type: 'text', text: PROJECT_MEMORY_INSTRUCTIONS },
       {
@@ -175,7 +192,16 @@ async function registerContext(ctx: Plugin.Context) {
         text: event.model.providerID === 'ollama' ? OLLAMA_SYSTEM_POLICY : MEMORY_POLICY
       }
     )
-    event.messages.splice(0, event.messages.length, ...withMemorySnapshots(event.messages))
+    await ctx.session
+      .context({ [SESSION_ID_KEY]: event.sessionID })
+      .then((messages) => {
+        event.messages.splice(
+          0,
+          event.messages.length,
+          ...withMemorySnapshots(event.messages, memorySnapshots(messages))
+        )
+      })
+      .catch(() => undefined)
   })
 }
 
