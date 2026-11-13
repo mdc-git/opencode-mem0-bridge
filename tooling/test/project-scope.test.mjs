@@ -39,7 +39,7 @@ const projectScopeTestScript = `
     const toolHooks = {}
     let sessionGets = 0
     const session = { id: 'session', agent: 'agent', location: { directory: sessionDirectory } }
-    const messages = [
+    let messages = [
       {
         type: 'assistant',
         content: [
@@ -98,6 +98,16 @@ const projectScopeTestScript = `
     await executeBefore(emptyEvent)
     assert.equal(emptyEvent.input, emptyInput)
 
+    const emptyProjectInput = { project: '', text: 'fact' }
+    const emptyProjectEvent = { tool: 'mem0_add_memory', sessionID: 'session', agent: 'agent', messageID: 'message', id: 'call-empty-project', input: emptyProjectInput }
+    await executeBefore(emptyProjectEvent)
+    assert.equal(emptyProjectEvent.input, emptyProjectInput)
+
+    const emptyProjectsInput = { projects: [''] }
+    const emptyProjectsEvent = { tool: 'mem0_search_memories', sessionID: 'session', agent: 'agent', messageID: 'message', id: 'call-empty-projects', input: emptyProjectsInput }
+    await executeBefore(emptyProjectsEvent)
+    assert.equal(emptyProjectsEvent.input, emptyProjectsInput)
+
     const getsBeforeUnrelated = sessionGets
     const unrelatedInput = { project: deepFile }
     const unrelatedEvent = { tool: 'read', sessionID: 'session', agent: 'agent', messageID: 'message', id: 'call-read', input: unrelatedInput }
@@ -111,6 +121,16 @@ const projectScopeTestScript = `
     const snapshot = promptEvent.metadata['mdc-git.mem0/project-memory']
     assert.ok(snapshot.includes('Projects searched: ' + main + ', ' + plain))
 
+    const readTool = (file) => ({ type: 'tool', name: 'read', state: { input: { path: file } } })
+    const cappedFiles = Array.from({ length: 10 }, (_, index) =>
+      path.join(main, 'nested', 'deep', 'capped-' + index + '.txt')
+    )
+    messages = [
+      { type: 'assistant', content: [readTool(plainFile), ...cappedFiles.map(readTool)] }
+    ]
+    await hooks.prompt({ sessionID: 'session', prompt: { text: 'capped' }, metadata: {} })
+    assert.deepEqual(searches[1].projects, [main])
+
     await dispose()
 `
 
@@ -123,6 +143,11 @@ test('resolves memory projects on the client before calling Mem0', async () => {
   try {
     await mkdir(path.join(main, 'nested', 'deep'), { recursive: true })
     await writeFile(path.join(main, 'nested', 'deep', 'file.txt'), 'deep')
+    await Promise.all(
+      Array.from({ length: 10 }, (_, index) =>
+        writeFile(path.join(main, 'nested', 'deep', `capped-${index}.txt`), 'capped')
+      )
+    )
     await mkdir(plain, { recursive: true })
     await writeFile(path.join(plain, 'file.txt'), 'plain')
     execFileSync('git', ['init', '-q', main])

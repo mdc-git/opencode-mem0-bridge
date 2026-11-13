@@ -17,7 +17,7 @@ const pathCapTestScript = `
     const registration = { dispose: async () => {} }
 
     const retrievalMessages = [
-      { type: 'assistant', content: [tool('/old-project/file'), ...files(0, 12).map(tool)] }
+      { type: 'assistant', content: files(0, 12).map(tool) }
     ]
     const searches = []
     const hooks = {}
@@ -51,7 +51,6 @@ const pathCapTestScript = `
     await hooks.prompt({ sessionID: 'session', prompt: { text: 'question' }, metadata: {} })
     await dispose()
     assert.deepEqual(searches[0].projects, ['/workspace', ...files(0, 12).toReversed().slice(0, 10)])
-    assert.ok(!searches[0].projects.includes('/old-project/file'))
 
     const eventId = Event.ID.make('evt_turn')
     const executionMessages = [

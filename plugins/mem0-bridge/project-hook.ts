@@ -11,14 +11,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === 'string')
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === 'string' && item !== '')
+  )
 }
 
 async function projectInput(
   input: Record<string, unknown>,
   sessionDirectory: string
 ): Promise<Record<string, unknown> | undefined> {
-  if (typeof input.project !== 'string') {
+  if (typeof input.project !== 'string' || input.project === '') {
     return undefined
   }
 
