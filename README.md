@@ -25,8 +25,26 @@ OpenCode execution.
 - The local Mem0 MCP server and its [setup requirements](https://github.com/mdc-git/mem0#requirements).
 - A configured OpenCode model provider when automatic extraction is enabled.
 
-The Mem0 server owns embeddings, vector search, persistence, and project scoping.
-The bridge supplies the OpenCode integration.
+The Mem0 server owns embeddings, vector search, and persistence. The bridge
+resolves memory projects on the client and supplies the OpenCode integration.
+
+## Project resolution
+
+A remote Mem0 server cannot see this machine's files, so the bridge resolves
+memory projects on the client before sending them. The same rules apply to
+agent calls, including calls through Code Mode's `execute` tool, and to the
+bridge's own retrieval and extraction:
+
+- A path inside a Git repository resolves to the main checkout root, so linked
+  worktrees map to the main checkout.
+- A path inside a non-Git folder resolves to that folder; a file resolves to its
+  folder.
+- A missing path is kept as given, except that a missing path inside a Git
+  repository resolves to that repository's root.
+- When a read omits `projects`, the bridge searches the session's project.
+
+This keeps memories filed under the repository or folder they are about even
+when the server cannot inspect the client filesystem.
 
 ## Install and enable
 
@@ -120,8 +138,8 @@ opencode mcp list
 ```
 
 The `mem0` entry should report `connected`. Memories are scoped per call to the
-repository or folder specified by `project`; reads accept `projects` and default
-to the server startup directory.
+repository or folder specified by `project`; reads accept `projects`, and the
+bridge fills the session's project when they are omitted.
 
 ## Quick start
 

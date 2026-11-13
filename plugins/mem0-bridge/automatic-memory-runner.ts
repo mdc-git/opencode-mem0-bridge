@@ -9,6 +9,7 @@ import {
   type TerminalOutcome
 } from './automatic-memory.ts'
 import { parseOperations } from './memory-operations.ts'
+import { resolveProjects } from './project-scope.ts'
 
 const EXTRACTION_LIMIT = 10
 
@@ -93,7 +94,11 @@ async function processLocalExecution(
     executionMessages(messages, execution.idleId),
     session.location.directory
   ).slice(0, 10)
-  const candidates = [...new Set([session.location.directory, ...paths])].slice(0, 10)
+  const resolved = await resolveProjects(
+    [session.location.directory, ...paths],
+    session.location.directory
+  )
+  const candidates = resolved.slice(0, 10)
   const memories = await mem0.search(session, searchQuery, EXTRACTION_LIMIT, candidates)
   const prompt = buildExtractionPrompt(items, memories, execution.outcome, candidates)
   const model = options.extractionModel ?? session.model

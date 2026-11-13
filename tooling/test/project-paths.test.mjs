@@ -21,6 +21,7 @@ const pathCapTestScript = `
     ]
     const searches = []
     const hooks = {}
+    const toolHooks = {}
     const retrievalCtx = {
       options: { command: ['mem0'] },
       mcp: {
@@ -34,15 +35,19 @@ const pathCapTestScript = `
         context: async () => retrievalMessages,
         hook: async (name, fn) => { hooks[name] = fn; return registration }
       },
-      tool: { list: async () => ['search_memories', 'add_memory', 'update_memory'].map((name) => ({
-        id: 'mem0_' + name,
-        execute: async (input) => {
-          searches.push(input)
-          return { output: { results: [] } }
-        }
-      })) }
+      tool: {
+        hook: async (name, fn) => { toolHooks[name] = fn; return registration },
+        list: async () => ['search_memories', 'add_memory', 'update_memory'].map((name) => ({
+          id: 'mem0_' + name,
+          execute: async (input) => {
+            searches.push(input)
+            return { output: { results: [] } }
+          }
+        }))
+      }
     }
     const dispose = await plugin.setup(retrievalCtx)
+    assert.equal(typeof toolHooks['execute.before'], 'function')
     await hooks.prompt({ sessionID: 'session', prompt: { text: 'question' }, metadata: {} })
     await dispose()
     assert.deepEqual(searches[0].projects, ['/workspace', ...files(0, 12).toReversed().slice(0, 10)])

@@ -4,7 +4,7 @@ Use the local `mem0` MCP tools as durable engineering memory.
 
 ## Scope
 
-Memories are scoped to the repository or folder they are about, not to the session directory. When adding a memory, pass `project`: a path inside that repository (any file or directory you worked on there works). Use the workspace directory only for facts that span several repositories or concern the environment itself. Pass `projects` to `search_memories` or `get_memories` to read other repositories; the default is the session directory.
+Memories are scoped to the repository or folder they are about, not to the session directory. When adding a memory, pass `project`: a path inside that repository (any file or directory you worked on there works). Use the workspace directory only for facts that span several repositories or concern the environment itself. Pass `projects` to `search_memories` or `get_memories` to read other repositories; the default is the session's project. If a memory is filed under the wrong project, use `move_memory` with a path inside the correct repository or folder.
 
 ## Retrieval
 
@@ -38,7 +38,8 @@ requirements, and verified causes of recurring failures.
 
 Before adding a fact that may already exist, search for it first. Use
 `update_memory` when the existing fact has changed instead of creating a
-contradictory duplicate.
+contradictory duplicate. Use `move_memory` with a path inside the correct
+repository or folder when a memory is filed under the wrong project.
 
 Do not store temporary progress, routine command or test results, generated
 output, line numbers, guesses, hypotheses, secrets, credentials, or facts

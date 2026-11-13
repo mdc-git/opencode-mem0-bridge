@@ -173,7 +173,7 @@ export function buildExtractionPrompt(
     '',
     'Project candidates:',
     ...candidates,
-    'Each add must use a project exactly equal to one listed candidate: a path inside the repository the fact is about. Use the session directory only for workspace facts or facts spanning several repositories. If unsure which candidate applies, omit the fact.',
+    "Each add must use a project exactly equal to one listed candidate project root: the repository or folder the fact is about. The first candidate is the session's project; use it for facts about that project. If unsure which candidate applies, omit the fact.",
     '',
     'Return only a JSON array.',
     'Each item must be exactly one of:',

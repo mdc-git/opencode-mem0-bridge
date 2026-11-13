@@ -34,7 +34,7 @@ const config = defineConfig([
         { pattern: 'plugins/mem0-bridge/index.ts', category: 'entry' },
         {
           pattern:
-            'plugins/mem0-bridge/{automatic-memory-runner,automatic-memory,memory-operations,mem0-tools}.ts',
+            'plugins/mem0-bridge/{automatic-memory-runner,automatic-memory,memory-operations,mem0-tools,project-hook,project-scope}.ts',
           category: 'core'
         }
       ]

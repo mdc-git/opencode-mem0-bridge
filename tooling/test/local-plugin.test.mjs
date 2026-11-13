@@ -218,6 +218,7 @@ const scopeTestScript = String.raw`
     const calls = []
     const registration = { dispose: async () => {} }
     const hooks = {}
+    const toolHooks = {}
     const ctx = {
       options: { command: ['mem0'] },
       mcp: {
@@ -231,15 +232,19 @@ const scopeTestScript = String.raw`
         context: async () => messages,
         hook: async (name, fn) => { hooks[name] = fn; return registration }
       },
-      tool: { list: async () => ['search_memories', 'add_memory', 'update_memory'].map((name) => ({
-        id: 'mem0_' + name,
-        execute: async (input) => {
-          calls.push({ name, input })
-          return { output: { results: [{ id: 'known', memory: 'remember', project: '/resolved' }] } }
-        }
-      })) }
+      tool: {
+        hook: async (name, fn) => { toolHooks[name] = fn; return registration },
+        list: async () => ['search_memories', 'add_memory', 'update_memory'].map((name) => ({
+          id: 'mem0_' + name,
+          execute: async (input) => {
+            calls.push({ name, input })
+            return { output: { results: [{ id: 'known', memory: 'remember', project: '/resolved' }] } }
+          }
+        }))
+      }
     }
     const dispose = await plugin.setup(ctx)
+    assert.equal(typeof toolHooks['execute.before'], 'function')
     const event = { sessionID: 'session', prompt: { text: ' question ' }, metadata: {} }
     await hooks.prompt(event)
     assert.deepEqual(calls[0], { name: 'search_memories', input: { query: 'question', projects: candidates, limit: 3, threshold: 0.5 } })
