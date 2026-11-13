@@ -42,6 +42,10 @@ bridge's own retrieval and extraction:
 - A missing path is kept as given, except that a missing path inside a Git
   repository resolves to that repository's root.
 - When a read omits `projects`, the bridge searches the session's project.
+- If Git refuses to read a repository (for example, a `safe.directory` /
+  dubious-ownership refusal for a repository owned by another user), the path
+  is treated as a non-Git folder, so the memory is filed under that folder
+  instead of the repository root.
 
 This keeps memories filed under the repository or folder they are about even
 when the server cannot inspect the client filesystem.

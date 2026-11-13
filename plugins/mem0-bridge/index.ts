@@ -121,11 +121,11 @@ async function persistMemorySnapshot(
 
   const session = await ctx.session.get({ [SESSION_ID_KEY]: event.sessionID })
   const messages = await ctx.session.context({ [SESSION_ID_KEY]: event.sessionID })
-  const resolved = await resolveProjects(
-    [session.location.directory, ...touchedPaths(messages, session.location.directory)],
+  const touched = touchedPaths(messages, session.location.directory).slice(0, MAX_PROJECT_PATHS)
+  const projects = await resolveProjects(
+    [session.location.directory, ...touched],
     session.location.directory
   )
-  const projects = resolved.slice(0, 1 + MAX_PROJECT_PATHS)
   const snapshot = renderMemorySnapshot(
     await mem0.search(session, query, RETRIEVAL_LIMIT, projects),
     projects
